@@ -1,0 +1,1505 @@
+---
+title: "CircosPlot"
+author: "Brandon G Roy"
+date: "2024-06-21"
+output: html_document
+---
+
+```{r}
+library(circlize)
+library(tidyverse)
+library(readxl)
+library(dplyr)
+
+
+```
+
+```{r}
+#import gene lists from each dataset
+
+file_path <- "CircosPlotData.xlsx"
+
+# Load and process each dataset
+process_data <- function(data, dataset_name, expected_treatments) {
+  long_data <- data %>%
+    tidyr::pivot_longer(cols = everything(), names_to = "Treatment_Time", values_to = "Gene") %>%
+    tidyr::separate(Treatment_Time, into = c("Treatment", "Time"), sep = "_T") %>%
+    dplyr::mutate(Dataset = dataset_name, Treatment = gsub(":V5", "", Treatment)) %>%
+    dplyr::filter(Treatment %in% expected_treatments)
+  return(long_data)
+}
+
+# Define expected treatments for each dataset
+expected_treatments <- list(
+  "CO-IP" = c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13"),
+  "Leaf RNA" = c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13"),
+  "Leaf Protein" = c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13"),
+  "Root RNA" = c("wildtype GHu", "mutant GHu")
+)
+
+# Load each dataset
+datasets <- list(
+  "CO-IP" = read_excel(file_path, sheet = "CO-IP"),
+  "Leaf RNA" = read_excel(file_path, sheet = "Leaf RNA"),
+  "Leaf Protein" = read_excel(file_path, sheet = "Leaf protein"),
+  "Root RNA" = read_excel(file_path, sheet = "Root RNA")
+)
+
+# Process and combine all datasets into one
+combined_data <- dplyr::bind_rows(
+  lapply(names(datasets), function(name) process_data(datasets[[name]], name, expected_treatments[[name]]))
+) %>%
+  dplyr::filter(!is.na(Gene))
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Define a minimum proportion
+min_proportion <- 0.01  # Reduce this value further if needed
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Define the desired order of factors to ensure groups are adjacent and F13 treatments on top
+desired_order <- c(
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA" & grepl("F13", gene_counts$factor)]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA" & !grepl("F13", gene_counts$factor)]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein" & grepl("F13", gene_counts$factor)]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein" & !grepl("F13", gene_counts$factor)]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP" & grepl("F13", gene_counts$factor)]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP" & !grepl("F13", gene_counts$factor)]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA" & grepl("F13", gene_counts$factor)]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA" & !grepl("F13", gene_counts$factor)])
+)
+
+
+# Prepare factors and sector widths in the desired order
+factors <- factor(gene_counts$factor, levels = desired_order)
+sector_widths <- gene_counts$proportion / 10
+sum(gene_counts$proportion)
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- sapply(levels(factors), function(f) treatment_colors[strsplit(f, "_")[[1]][3]])
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors), dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+
+# Convert link matrix to adjacency list
+link_df <- as.data.frame(as.table(link_matrix)) %>%
+  dplyr::filter(Freq > 0) %>%
+  dplyr::rename(from = Var1, to = Var2, value = Freq)
+
+link_df$from <- as.character(link_df$from)
+link_df$to <- as.character(link_df$to)
+
+# Create a color mapping for the links based on the treatment colors
+link_colors <- sapply(1:nrow(link_df), function(i) {
+  from_treatment <- strsplit(link_df$from[i], "_")[[1]][3]
+  to_treatment <- strsplit(link_df$to[i], "_")[[1]][3]
+  if (from_treatment == to_treatment) {
+    treatment_colors[from_treatment]
+  } else {
+    "#CCCCCC"  # Grey for links between different treatments
+  }
+})
+```
+
+```{r}
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), track.height = 0.05, start.degree = 90, gap.after = c(rep(10, length(unique(gene_counts$Dataset)))))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Initialize circos plot with dataset categories, time points, and treatments
+circos.initialize(factors = factors, xlim = c(0, 1.2), sector.width = sector_widths)
+
+# Define border colors for different datasets
+dataset_colors <- c("Leaf RNA" = "darkgreen", "Leaf Protein" = "purple", "CO-IP" = "blue", "Root RNA" = "brown")
+
+# Adding main track for each factor with custom colors and placing text outside the plot
+circos.track(factors, ylim = c(0, 10), panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, 5, time_label, facing = "bending.inside", niceFacing = T, adj = 0.5, cex = 1, col = "white")
+}, bg.col = factor_colors, bg.border = NA)
+
+# Highlight sectors for different datasets
+for (dataset in names(dataset_colors)) {
+  sectors_to_highlight <- gene_counts$factor[grep(dataset, gene_counts$factor)]
+  if (length(sectors_to_highlight) > 0) {
+    highlight.sector(sectors_to_highlight, col = NA, border = dataset_colors[dataset], lwd = 3, h=2, padding = c(0.005, 0.0, 0.005, 0.0))
+  }
+}
+
+# Add ribbons based on the link matrix using custom colors for matching treatments with an exponential scale for transparency
+for (i in 1:nrow(link_matrix)) {
+  for (j in 1:ncol(link_matrix)) {
+    if (link_matrix[i, j] > 0) {
+      scaled_value <- link_matrix[i, j] / max(link_matrix)
+      transparency <- min(max(exp(scaled_value) - 1, 0.05), 0.3)
+      from_treatment <- strsplit(rownames(link_matrix)[i], "_")[[1]][3]
+      to_treatment <- strsplit(colnames(link_matrix)[j], "_")[[1]][3]
+      if (from_treatment == to_treatment) {
+        col <- treatment_colors[from_treatment]
+      } else {
+        col <- "#CCCCCC"  # Grey for links between different treatments
+      }
+      circos.link(sector.index1 = rownames(link_matrix)[i], point1 = c(0, 1),
+                  sector.index2 = colnames(link_matrix)[j], point2 = c(0, 1), h.ratio = 0.80,w = 0.5,
+                  col = adjustcolor(col, alpha.f = transparency), border = NA)
+    }
+  }
+}
+
+# Adding legend for treatments
+legend("bottomright", inset = c(1, -1), legend = names(treatment_colors), fill = treatment_colors, xpd = TRUE, horiz = F, bty = "n")
+
+```
+```{r}
+# Set the file name and resolution
+png("circos.png", width = 1000, height = 1000, res = 500)
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), track.height = 0.05, start.degree = 90, gap.after = c(rep(1, length(unique(gene_counts$Dataset)))))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Initialize circos plot with dataset categories, time points, and treatments
+circos.initialize(factors = factors, xlim = c(0, 2), sector.width = sector_widths)
+
+# Define border colors for different datasets
+dataset_colors <- c("Leaf RNA" = "darkgreen", "Leaf Protein" = "purple", "CO-IP" = "blue", "Root RNA" = "brown")
+
+# Adding a skinnier track for highlights first
+circos.track(ylim = c(0, 1), track.height = 0.05, bg.border = NA, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  dataset = strsplit(sector.index, "_")[[1]][1]
+  if (dataset %in% names(dataset_colors)) {
+    circos.rect(CELL_META$xlim[1], 0, CELL_META$xlim[2], 0.5, col = dataset_colors[dataset], border = NA, lwd = 3)
+  }
+})
+
+# Adding main track for each factor with custom colors and placing text outside the plot
+circos.track(factors, ylim = c(0, 10), track.height = 0.1, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, 5, time_label, facing = "bending.inside", niceFacing = T, adj = 0.5, cex = 0.5, col = "white")
+}, bg.col = factor_colors, bg.border = NA)
+
+# Add ribbons based on the link matrix using custom colors for matching treatments with an exponential scale for transparency
+for (i in 1:nrow(link_matrix)) {
+  for (j in 1:ncol(link_matrix)) {
+    if (link_matrix[i, j] > 0) {
+      scaled_value <- link_matrix[i, j] / max(link_matrix)
+      transparency <- min(max(exp(scaled_value) - 1, 0.05), 0.3)
+      from_treatment <- strsplit(rownames(link_matrix)[i], "_")[[1]][3]
+      to_treatment <- strsplit(colnames(link_matrix)[j], "_")[[1]][3]
+      if (from_treatment == to_treatment) {
+        col <- treatment_colors[from_treatment]
+      } else {
+        col <- "#CCCCCC"  # Grey for links between different treatments
+      }
+      circos.link(sector.index1 = rownames(link_matrix)[i], point1 = c(0, 1),
+                  sector.index2 = colnames(link_matrix)[j], point2 = c(0, 1), h.ratio = 0.80, w = 0.5,
+                  col = adjustcolor(col, alpha.f = transparency), border = NA)
+    }
+  }
+}
+
+# Adding legend for treatments
+#legend("bottomright", inset = c(0.125, -0.075), legend = names(treatment_colors), fill = treatment_colors, xpd = TRUE, horiz = F, bty = "n")
+dev.off()
+```
+```{r}
+
+# Create a function to find overlapping genes
+find_overlaps <- function(data) {
+  overlaps <- data %>%
+    group_by(Gene) %>%
+    filter(n() > 1) %>%
+    ungroup()
+  
+  return(overlaps)
+}
+
+# Find overlapping genes
+overlapping_genes <- find_overlaps(combined_data)
+
+# Check the overlapping genes
+head(overlapping_genes)
+
+
+```
+
+```{r}
+# Calculate the number of genes in each dataset and time point combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = n()) %>%
+  ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.005  # Adjusted to ensure sub-sectors are visible
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- gene_counts %>%
+  mutate(proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion)) %>%
+  ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+factors <- paste(gene_counts$Dataset, gene_counts$Time, gene_counts$Treatment, sep = "_")
+sector_widths <- gene_counts$proportion
+
+# Check the factors and sector widths
+head(gene_counts)
+
+
+```
+```{r}
+
+# Create a link matrix
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors))
+rownames(link_matrix) <- factors
+colnames(link_matrix) <- factors
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- 1
+        link_matrix[sector2, sector1] <- 1
+      }
+    }
+  }
+}
+
+# Check the link matrix
+head(link_matrix)
+
+
+# Check the link matrix
+head(link_matrix)
+
+
+
+```
+
+```{r}
+
+# Load each sheet
+co_ip <- read_excel(file_path, sheet = "CO-IP")
+leaf_rna <- read_excel(file_path, sheet = "Leaf RNA")
+leaf_protein <- read_excel(file_path, sheet = "Leaf protein")
+root_rna <- read_excel(file_path, sheet = "Root RNA")
+
+# Function to process the data
+process_data <- function(data, dataset_name) {
+  long_data <- tidyr::pivot_longer(data, cols = everything(), names_to = "Treatment_Time", values_to = "Gene")
+  long_data <- tidyr::separate(long_data, Treatment_Time, into = c("Treatment", "Time"), sep = "_T")
+  long_data <- dplyr::mutate(long_data, Dataset = dataset_name)
+  return(long_data)
+}
+
+# Process each dataset
+co_ip_long <- process_data(co_ip, "CO-IP")
+leaf_rna_long <- process_data(leaf_rna, "Leaf RNA")
+leaf_protein_long <- process_data(leaf_protein, "Leaf Protein")
+root_rna_long <- process_data(root_rna, "Root RNA")
+
+# Combine all datasets into one
+combined_data <- dplyr::bind_rows(co_ip_long, leaf_rna_long, leaf_protein_long, root_rna_long)
+
+# Remove rows with NA in the Gene column
+combined_data <- dplyr::filter(combined_data, !is.na(Gene))
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Calculate the number of genes in each dataset, time point, and treatment combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = dplyr::n()) %>%
+  dplyr::ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.01
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+gene_counts <- dplyr::mutate(gene_counts, factor = paste(Dataset, Time, Treatment, sep = "_"))
+
+# Prepare factors and sector widths
+factors <- factor(gene_counts$factor, levels = unique(gene_counts$factor))
+sector_widths <- (gene_counts$proportion/10)
+sector_widths
+sum(sector_widths)
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- gene_counts %>%
+  dplyr::mutate(color = treatment_colors[Treatment]) %>%
+  dplyr::pull(color)
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors),
+                      dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+
+# Calculate maximum overlap for normalization
+max_overlap <- max(link_matrix)
+
+```
+
+```{r}
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), track.height = 0.1, gap.after = c(rep(5, length(unique(gene_counts$Dataset)))))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Initialize circos plot with dataset categories, time points, and treatments
+circos.initialize(factors = factors, xlim = c(0, 1), sector.width = sector_widths)
+
+# Define border colors for different datasets
+dataset_colors <- c("Leaf RNA" = "#339933", "Leaf Protein" = "#9933ff", "CO-IP" = "#cc99ff", "Root RNA" = "#996600")
+
+# Adding track for each factor with improved layout and custom colors
+circos.track(factors = factors, ylim = c(0, 1), panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], time_label, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.8)
+}, bg.col = factor_colors, bg.border = NA)
+
+# Highlight sectors for different datasets
+for(dataset in names(dataset_colors)) {
+  sectors_to_highlight <- gene_counts$factor[grep(dataset, gene_counts$factor)]
+  if (length(sectors_to_highlight) > 0) {
+    highlight.sector(sectors_to_highlight, col = NA, border = dataset_colors[dataset], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+  }
+}
+
+# Add ribbons based on the link matrix using h and h2 for thickness
+for (i in 1:nrow(link_matrix)) {
+  for (j in 1:ncol(link_matrix)) {
+    if (link_matrix[i, j] > 0) {
+      transparency <- 1 - (link_matrix[i, j] / max_overlap)
+      thickness <- link_matrix[i, j] / max_overlap * 0.75  # Increase thickness scaling
+      circos.link(rownames(link_matrix)[i], c(0.5 - thickness/2, 0.5 + thickness/2),
+                  colnames(link_matrix)[j], c(0.5 - thickness/2, 0.5 + thickness/2),
+                  col = rgb(0.5, 0.5, 0.5, alpha = transparency), border = NA)  # Change link color to gray
+    }
+  }
+}
+
+
+# Adding legend for treatments
+legend("topright", inset = c(-0.15, 0), legend = names(treatment_colors), fill = treatment_colors, title = "Treatments", xpd = TRUE)
+
+```
+```{r}
+
+# Load each sheet
+co_ip <- read_excel(file_path, sheet = "CO-IP")
+leaf_rna <- read_excel(file_path, sheet = "Leaf RNA")
+leaf_protein <- read_excel(file_path, sheet = "Leaf protein")
+root_rna <- read_excel(file_path, sheet = "Root RNA")
+
+# Function to process the data
+process_data <- function(data, dataset_name) {
+  long_data <- tidyr::pivot_longer(data, cols = everything(), names_to = "Treatment_Time", values_to = "Gene")
+  long_data <- tidyr::separate(long_data, Treatment_Time, into = c("Treatment", "Time"), sep = "_T")
+  long_data <- dplyr::mutate(long_data, Dataset = dataset_name)
+  return(long_data)
+}
+
+# Process each dataset
+co_ip_long <- process_data(co_ip, "CO-IP")
+leaf_rna_long <- process_data(leaf_rna, "Leaf RNA")
+leaf_protein_long <- process_data(leaf_protein, "Leaf Protein")
+root_rna_long <- process_data(root_rna, "Root RNA")
+
+# Combine all datasets into one
+combined_data <- dplyr::bind_rows(co_ip_long, leaf_rna_long, leaf_protein_long, root_rna_long)
+
+# Remove rows with NA in the Gene column
+combined_data <- dplyr::filter(combined_data, !is.na(Gene))
+
+# Remove suffix ':V5' from CO-IP treatments
+combined_data$Treatment <- gsub(":V5", "", combined_data$Treatment)
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Calculate the number of genes in each dataset, time point, and treatment combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = dplyr::n()) %>%
+  dplyr::ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.01
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+gene_counts <- dplyr::mutate(gene_counts, factor = paste(Dataset, Time, Treatment, sep = "_"))
+
+# Prepare factors and sector widths
+factors <- factor(gene_counts$factor, levels = unique(gene_counts$factor))
+sector_widths <- (gene_counts$proportion / 10)
+
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- gene_counts %>%
+  dplyr::mutate(color = treatment_colors[Treatment]) %>%
+  dplyr::pull(color)
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors),
+                      dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+sum(sector_widths)
+# Calculate maximum overlap for normalization
+max_overlap <- max(link_matrix)
+```
+
+```{r}
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.04, 0, 0.04, 0), track.height = 0.05, gap.after = c(rep(10, length(unique(gene_counts$Dataset)))))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Initialize circos plot with dataset categories, time points, and treatments
+circos.initialize(factors = factors, xlim = c(0, 1), sector.width = sector_widths)
+
+# Define border colors for different datasets
+dataset_colors <- c("Leaf RNA" = "darkgreen", "Leaf Protein" = "purple", "CO-IP" = "blue", "Root RNA" = "brown")
+
+# Adding track for each factor with improved layout and custom colors
+circos.track(factors = factors, ylim = c(0, 1), panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], time_label, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.6)
+}, bg.col = factor_colors, bg.border = NA)
+
+# Highlight sectors for different datasets
+for(dataset in names(dataset_colors)) {
+  sectors_to_highlight <- gene_counts$factor[grep(dataset, gene_counts$factor)]
+  if (length(sectors_to_highlight) > 0) {
+    highlight.sector(sectors_to_highlight, col = NA, border = dataset_colors[dataset], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+  }
+}
+
+
+# Add ribbons based on the link matrix using chordDiagram style
+for (i in 1:nrow(link_matrix)) {
+  for (j in 1:ncol(link_matrix)) {
+    if (link_matrix[i, j] > 0) {
+      transparency <- 1 - (link_matrix[i, j] / max_overlap)
+      circos.link(sector.index1 = rownames(link_matrix)[i], point1 = c(0, 1),
+                  sector.index2 = colnames(link_matrix)[j], point2 = c(0, 1),
+                  col = rgb(0.5, 0.5, 0.5, alpha = 1-transparency), border = NA)
+    }
+  }
+}
+
+# Adding legend for treatments
+legend("topright", inset = c(-0, 0), legend = names(treatment_colors), fill = treatment_colors, title = "Treatments", xpd = TRUE)
+
+```
+```{r}
+# Load each sheet
+co_ip <- read_excel(file_path, sheet = "CO-IP")
+leaf_rna <- read_excel(file_path, sheet = "Leaf RNA")
+leaf_protein <- read_excel(file_path, sheet = "Leaf protein")
+root_rna <- read_excel(file_path, sheet = "Root RNA")
+
+# Function to process the data
+process_data <- function(data, dataset_name) {
+  long_data <- tidyr::pivot_longer(data, cols = everything(), names_to = "Treatment_Time", values_to = "Gene")
+  long_data <- tidyr::separate(long_data, Treatment_Time, into = c("Treatment", "Time"), sep = "_T")
+  long_data <- dplyr::mutate(long_data, Dataset = dataset_name)
+  return(long_data)
+}
+
+# Process each dataset
+co_ip_long <- process_data(co_ip, "CO-IP")
+leaf_rna_long <- process_data(leaf_rna, "Leaf RNA")
+leaf_protein_long <- process_data(leaf_protein, "Leaf Protein")
+root_rna_long <- process_data(root_rna, "Root RNA")
+
+# Combine all datasets into one
+combined_data <- dplyr::bind_rows(co_ip_long, leaf_rna_long, leaf_protein_long, root_rna_long)
+
+# Remove rows with NA in the Gene column
+combined_data <- dplyr::filter(combined_data, !is.na(Gene))
+
+# Remove suffix ':V5' from CO-IP treatments
+combined_data$Treatment <- gsub(":V5", "", combined_data$Treatment)
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Calculate the number of genes in each dataset, time point, and treatment combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = dplyr::n()) %>%
+  dplyr::ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.01
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+gene_counts <- dplyr::mutate(gene_counts, factor = paste(Dataset, Time, Treatment, sep = "_"))
+
+# Prepare factors and sector widths
+factors <- factor(gene_counts$factor, levels = unique(gene_counts$factor))
+sector_widths <- (gene_counts$proportion / 10)
+
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+# Highlight sectors for different datasets
+dataset_colors <- c("Leaf RNA" = "darkgreen", "Leaf Protein" = "purple", "CO-IP" = "blue", "Root RNA" = "brown")
+
+# Assign colors to each factor based on treatment
+factor_colors <- gene_counts %>%
+  dplyr::mutate(color = treatment_colors[Treatment]) %>%
+  dplyr::pull(color)
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors),
+                      dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+
+# Convert link matrix to adjacency list
+link_df <- as.data.frame(as.table(link_matrix))
+link_df <- link_df[link_df$Freq > 0, ]
+colnames(link_df) <- c("from", "to", "value")
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), gap.after = c(rep(10, length(unique(gene_counts$Dataset)))))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Ensure that 'from' and 'to' columns in link_df are characters
+link_df$from <- as.character(link_df$from)
+link_df$to <- as.character(link_df$to)
+
+# Create a color mapping for the links based on the treatment colors
+link_colors <- sapply(1:nrow(link_df), function(i) {
+  from_treatment <- strsplit(link_df$from[i], "_")[[1]][3]
+  to_treatment <- strsplit(link_df$to[i], "_")[[1]][3]
+  if (from_treatment == to_treatment) {
+    treatment_colors[from_treatment]
+  } else {
+    "#CCCCCC"  # Grey for links between different treatments
+  }
+})
+
+# Create a color mapping for the sectors based on the treatment colors
+sector_colors <- sapply(levels(factors), function(f) {
+  treatment <- strsplit(f, "_")[[1]][3]
+  treatment_colors[treatment]
+})
+
+# Create the chord diagram using chordDiagram function with custom colors
+chordDiagram(link_df, col = link_colors, transparency = 0.5, annotationTrack = c("grid", "name", "axis"), 
+             preAllocateTracks = list(track.height = 0.1), grid.col = sector_colors)
+
+# Ensure sector colors are applied to the annotation track as well
+circos.track(track.index = 1, bg.col = sector_colors, bg.border = NA, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], sector.index, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.6)
+})
+
+
+for(dataset in names(dataset_colors)) {
+  sectors_to_highlight <- gene_counts$factor[grep(dataset, gene_counts$factor)]
+  if (length(sectors_to_highlight) > 0) {
+    highlight.sector(sectors_to_highlight, track.index = 1, col = NA, border = dataset_colors[dataset], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+  }
+}
+
+# Adding legend for treatments
+legend("topright", inset = c(-0, 0), legend = names(treatment_colors), fill = treatment_colors, title = "Treatments", xpd = TRUE)
+```
+
+```{r}
+# Combine all datasets into one
+combined_data <- dplyr::bind_rows(co_ip_long, leaf_rna_long, leaf_protein_long, root_rna_long)
+
+# Remove rows with NA in the Gene column
+combined_data <- dplyr::filter(combined_data, !is.na(Gene))
+
+# Remove suffix ':V5' from CO-IP treatments
+combined_data$Treatment <- gsub(":V5", "", combined_data$Treatment)
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Calculate the number of genes in each dataset, time point, and treatment combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = dplyr::n()) %>%
+  dplyr::ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.01
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+gene_counts <- dplyr::mutate(gene_counts, factor = paste(Dataset, Time, Treatment, sep = "_"))
+
+# Define the desired order of factors to ensure groups are adjacent
+desired_order <- c(
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA"])
+)
+
+# Prepare factors and sector widths in the desired order
+factors <- factor(gene_counts$factor, levels = desired_order)
+sector_widths <- (gene_counts$proportion / 10)
+
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- sapply(levels(factors), function(f) {
+  treatment <- strsplit(f, "_")[[1]][3]
+  treatment_colors[treatment]
+})
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors),
+                      dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+
+# Convert link matrix to adjacency list
+link_df <- as.data.frame(as.table(link_matrix))
+link_df <- link_df[link_df$Freq > 0, ]
+colnames(link_df) <- c("from", "to", "value")
+
+# Ensure that 'from' and 'to' columns in link_df are characters
+link_df$from <- as.character(link_df$from)
+link_df$to <- as.character(link_df$to)
+
+# Create a color mapping for the links based on the treatment colors
+link_colors <- sapply(1:nrow(link_df), function(i) {
+  from_treatment <- strsplit(link_df$from[i], "_")[[1]][3]
+  to_treatment <- strsplit(link_df$to[i], "_")[[1]][3]
+  if (from_treatment == to_treatment) {
+    treatment_colors[from_treatment]
+  } else {
+    "#CCCCCC"  # Grey for links between different treatments
+  }
+})
+
+### Plotting Block ###
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), gap.after = c(rep(10, length(unique(gene_counts$Dataset))), 10))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Create the chord diagram using chordDiagram function with custom colors
+chordDiagram(link_df, col = link_colors, transparency = 0.5, annotationTrack = "grid", 
+             preAllocateTracks = list(track.height = 0.1), grid.col = factor_colors)
+
+# Ensure sector colors are applied to the annotation track as well
+circos.track(track.index = 2, bg.col = factor_colors, bg.border = NA, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], time_label, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.6)
+})
+
+# Highlight sectors for different datasets
+dataset_colors <- c("Leaf RNA" = "darkgreen", "Leaf Protein" = "purple", "CO-IP" = "blue", "Root RNA" = "brown")
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf RNA", gene_counts$factor)], track.index = 2, col = NA, border = dataset_colors["Leaf RNA"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf Protein", gene_counts$factor)], track.index = 2, col = NA, border = dataset_colors["Leaf Protein"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("CO-IP", gene_counts$factor)], track.index = 2, col = NA, border = dataset_colors["CO-IP"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Root RNA", gene_counts$factor)], track.index = 2, col = NA, border = dataset_colors["Root RNA"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+```
+```{r}
+# Load each sheet
+co_ip <- read_excel(file_path, sheet = "CO-IP")
+leaf_rna <- read_excel(file_path, sheet = "Leaf RNA")
+leaf_protein <- read_excel(file_path, sheet = "Leaf protein")
+root_rna <- read_excel(file_path, sheet = "Root RNA")
+
+# Function to process the data
+process_data <- function(data, dataset_name, expected_treatments) {
+  long_data <- tidyr::pivot_longer(data, cols = everything(), names_to = "Treatment_Time", values_to = "Gene")
+  long_data <- tidyr::separate(long_data, Treatment_Time, into = c("Treatment", "Time"), sep = "_T")
+  long_data <- dplyr::mutate(long_data, Dataset = dataset_name)
+  
+  # Remove suffix ':V5' from treatments
+  long_data$Treatment <- gsub(":V5", "", long_data$Treatment)
+  
+  # Filter for expected treatments
+  long_data <- dplyr::filter(long_data, Treatment %in% expected_treatments)
+  
+  return(long_data)
+}
+
+# Define expected treatments for each dataset
+expected_treatments_co_ip <- c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13")
+expected_treatments_leaf_rna <- c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13")
+expected_treatments_leaf_protein <- c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13")
+expected_treatments_root_rna <- c("wildtype GHu", "mutant GHu")
+
+# Process each dataset with validation
+co_ip_long <- process_data(co_ip, "CO-IP", expected_treatments_co_ip)
+leaf_rna_long <- process_data(leaf_rna, "Leaf RNA", expected_treatments_leaf_rna)
+leaf_protein_long <- process_data(leaf_protein, "Leaf Protein", expected_treatments_leaf_protein)
+root_rna_long <- process_data(root_rna, "Root RNA", expected_treatments_root_rna)
+
+# Combine all datasets into one
+combined_data <- dplyr::bind_rows(co_ip_long, leaf_rna_long, leaf_protein_long, root_rna_long)
+
+# Remove rows with NA in the Gene column
+combined_data <- dplyr::filter(combined_data, !is.na(Gene))
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Calculate the number of genes in each dataset, time point, and treatment combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = dplyr::n()) %>%
+  dplyr::ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.01
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+gene_counts <- dplyr::mutate(gene_counts, factor = paste(Dataset, Time, Treatment, sep = "_"))
+
+# Define the desired order of factors to ensure groups are adjacent
+desired_order <- c(
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA"])
+)
+
+# Prepare factors and sector widths in the desired order
+factors <- factor(gene_counts$factor, levels = desired_order)
+sector_widths <- (gene_counts$proportion / 10)
+
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- sapply(levels(factors), function(f) {
+  treatment <- strsplit(f, "_")[[1]][3]
+  treatment_colors[treatment]
+})
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors),
+                      dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+
+# Convert link matrix to adjacency list
+link_df <- as.data.frame(as.table(link_matrix))
+link_df <- link_df[link_df$Freq > 0, ]
+colnames(link_df) <- c("from", "to", "value")
+
+# Ensure that 'from' and 'to' columns in link_df are characters
+link_df$from <- as.character(link_df$from)
+link_df$to <- as.character(link_df$to)
+
+# Create a color mapping for the links based on the treatment colors
+link_colors <- sapply(1:nrow(link_df), function(i) {
+  from_treatment <- strsplit(link_df$from[i], "_")[[1]][3]
+  to_treatment <- strsplit(link_df$to[i], "_")[[1]][3]
+  if (from_treatment == to_treatment) {
+    treatment_colors[from_treatment]
+  } else {
+    "#CCCCCC"  # Grey for links between different treatments
+  }
+})
+
+print(factor_colors)
+
+### Plotting Block ###
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), gap.after = c(rep(10, length(unique(gene_counts$Dataset))), 10))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Create the chord diagram using chordDiagram function with custom colors
+chordDiagram(link_df, col = link_colors, transparency = 0.5, annotationTrack = "grid", 
+             preAllocateTracks = list(track.height = 0.1), grid.col = factor_colors)
+
+# Ensure sector colors are applied to the annotation track as well
+circos.track(track.index = 2, bg.col = factor_colors, bg.border = NA, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], time_label, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.75)
+})
+
+# Highlight sectors for different datasets
+dataset_colors <- c("Leaf RNA" = "#00cc66", "Leaf Protein" = "#cc00ff", "CO-IP" = "#666699", "Root RNA" = "#cc9900")
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf RNA", gene_counts$factor)], track.index = 1, col = dataset_colors["Leaf RNA"], border = NA, lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf Protein", gene_counts$factor)], track.index = 1, col = dataset_colors["Leaf Protein"], border = NA, lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("CO-IP", gene_counts$factor)], track.index = 1, col = dataset_colors["CO-IP"], border = NA, lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Root RNA", gene_counts$factor)], track.index = 1, col = dataset_colors["Root RNA"], border = NA, lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+```
+
+```{r}
+# Load each sheet
+co_ip <- read_excel(file_path, sheet = "CO-IP")
+leaf_rna <- read_excel(file_path, sheet = "Leaf RNA")
+leaf_protein <- read_excel(file_path, sheet = "Leaf protein")
+root_rna <- read_excel(file_path, sheet = "Root RNA")
+
+# Function to process the data
+process_data <- function(data, dataset_name, expected_treatments) {
+  long_data <- tidyr::pivot_longer(data, cols = everything(), names_to = "Treatment_Time", values_to = "Gene")
+  long_data <- tidyr::separate(long_data, Treatment_Time, into = c("Treatment", "Time"), sep = "_T")
+  long_data <- dplyr::mutate(long_data, Dataset = dataset_name)
+  
+  # Remove suffix ':V5' from treatments
+  long_data$Treatment <- gsub(":V5", "", long_data$Treatment)
+  
+  # Filter for expected treatments
+  long_data <- dplyr::filter(long_data, Treatment %in% expected_treatments)
+  
+  return(long_data)
+}
+
+# Define expected treatments for each dataset
+expected_treatments_co_ip <- c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13")
+expected_treatments_leaf_rna <- c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13")
+expected_treatments_leaf_protein <- c("wildtype GHu", "mutant GHu", "wildtype F13", "mutant F13")
+expected_treatments_root_rna <- c("wildtype GHu", "mutant GHu")
+
+# Process each dataset with validation
+co_ip_long <- process_data(co_ip, "CO-IP", expected_treatments_co_ip)
+leaf_rna_long <- process_data(leaf_rna, "Leaf RNA", expected_treatments_leaf_rna)
+leaf_protein_long <- process_data(leaf_protein, "Leaf Protein", expected_treatments_leaf_protein)
+root_rna_long <- process_data(root_rna, "Root RNA", expected_treatments_root_rna)
+
+# Combine all datasets into one
+combined_data <- dplyr::bind_rows(co_ip_long, leaf_rna_long, leaf_protein_long, root_rna_long)
+
+# Remove rows with NA in the Gene column
+combined_data <- dplyr::filter(combined_data, !is.na(Gene))
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Calculate the number of genes in each dataset, time point, and treatment combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = dplyr::n()) %>%
+  dplyr::ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.01
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+gene_counts <- dplyr::mutate(gene_counts, factor = paste(Dataset, Time, Treatment, sep = "_"))
+
+# Define the desired order of factors to ensure groups are adjacent
+desired_order <- c(
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA"])
+)
+
+# Prepare factors and sector widths in the desired order
+factors <- factor(gene_counts$factor, levels = desired_order)
+sector_widths <- (gene_counts$proportion / 10)
+
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- sapply(levels(factors), function(f) {
+  treatment <- strsplit(f, "_")[[1]][3]
+  treatment_colors[treatment]
+})
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors),
+                      dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+
+# Convert link matrix to adjacency list
+link_df <- as.data.frame(as.table(link_matrix))
+link_df <- link_df[link_df$Freq > 0, ]
+colnames(link_df) <- c("from", "to", "value")
+
+# Ensure that 'from' and 'to' columns in link_df are characters
+link_df$from <- as.character(link_df$from)
+link_df$to <- as.character(link_df$to)
+
+# Create a color mapping for the links based on the treatment colors
+link_colors <- sapply(1:nrow(link_df), function(i) {
+  from_treatment <- strsplit(link_df$from[i], "_")[[1]][3]
+  to_treatment <- strsplit(link_df$to[i], "_")[[1]][3]
+  if (from_treatment == to_treatment) {
+    treatment_colors[from_treatment]
+  } else {
+    "#CCCCCC"  # Grey for links between different treatments
+  }
+})
+
+### Plotting Block ###
+
+# Define the desired order of factors to ensure groups are adjacent
+desired_order <- c(
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA"])
+)
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), gap.after = c(rep(10, length(unique(gene_counts$Dataset))), 10))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+chordDiagram(link_df, col = link_colors, transparency = 0.5, annotationTrack = "grid", 
+             preAllocateTracks = list(track.height = 0.1), grid.col = factor_colors)
+
+
+# Ensure sector colors are applied to the annotation track as well
+circos.track(track.index = 2, bg.col = factor_colors, bg.border = NA, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], time_label, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.6)
+})
+# Highlight sectors for different datasets
+dataset_colors <- c("Leaf RNA" = "#00cc66", "Leaf Protein" = "#cc00ff", "CO-IP" = "#666699", "Root RNA" = "#cc9900")
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf RNA", gene_counts$factor)], track.index = 1, col = dataset_colors["Leaf RNA"], border = NA, lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf Protein", gene_counts$factor)], track.index = 1, col = dataset_colors["Leaf Protein"], border = NA, lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("CO-IP", gene_counts$factor)], track.index = 1, col = dataset_colors["CO-IP"], border = NA, lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Root RNA", gene_counts$factor)], track.index = 1, col = dataset_colors["Root RNA"], border = NA, lwd = 2, padding = c(0.05, 0, 0.05, 0))
+
+factor_colors
+```
+
+```{r}
+### Plotting Block ###
+
+# Define the desired order of factors to ensure groups are adjacent
+desired_order <- c(
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA"])
+)
+
+# Prepare factors and sector widths in the desired order
+factors <- factor(gene_counts$factor, levels = desired_order)
+sector_widths <- (gene_counts$proportion / 10)
+
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- sapply(levels(factors), function(f) {
+  treatment <- strsplit(f, "_")[[1]][3]
+  treatment_colors[treatment]
+})
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.02, 0, 0.02, 0), gap.after = c(rep(10, length(unique(gene_counts$Dataset))), 10))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Create the chord diagram using chordDiagram function with custom colors
+chordDiagram(link_df, col = link_colors, transparency = 0.5, annotationTrack = "grid", 
+             preAllocateTracks = list(track.height = 0.05), grid.col = factor_colors)
+
+# Ensure sector colors are applied to the annotation track as well
+circos.track(track.index = 2, bg.col = factor_colors, bg.border = NA, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], time_label, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.6)
+})
+
+# Highlight sectors for different datasets
+dataset_colors <- c("Leaf RNA" = "darkgreen", "Leaf Protein" = "purple", "CO-IP" = "blue", "Root RNA" = "brown")
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf RNA", gene_counts$factor)], track.index = 1, col = NA, border = dataset_colors["Leaf RNA"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Leaf Protein", gene_counts$factor)], track.index = 1, col = NA, border = dataset_colors["Leaf Protein"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("CO-IP", gene_counts$factor)], track.index = 1, col = NA, border = dataset_colors["CO-IP"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+highlight.sector(sector.index = gene_counts$factor[grep("Root RNA", gene_counts$factor)], track.index = 1, col = NA, border = dataset_colors["Root RNA"], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+
+# Add numerical labels on the outside of each sector
+circos.trackPlotRegion(ylim = c(0, 1), bg.border = NA, track.height = 0.1, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  circos.text(CELL_META$xcenter, CELL_META$ylim[2], sector.index, facing = "outside", niceFacing = TRUE, adj = c(0.5, 1.5), cex = 0.6)
+})
+```
+
+```{r}
+# Process each dataset with validation
+co_ip_long <- process_data(co_ip, "CO-IP", expected_treatments_co_ip)
+leaf_rna_long <- process_data(leaf_rna, "Leaf RNA", expected_treatments_leaf_rna)
+leaf_protein_long <- process_data(leaf_protein, "Leaf Protein", expected_treatments_leaf_protein)
+root_rna_long <- process_data(root_rna, "Root RNA", expected_treatments_root_rna)
+
+# Combine all datasets into one
+combined_data <- dplyr::bind_rows(co_ip_long, leaf_rna_long, leaf_protein_long, root_rna_long)
+
+# Remove rows with NA in the Gene column
+combined_data <- dplyr::filter(combined_data, !is.na(Gene))
+
+# Identify overlapping genes
+overlapping_genes <- combined_data %>%
+  dplyr::group_by(Gene) %>%
+  dplyr::filter(dplyr::n() > 1) %>%
+  dplyr::ungroup()
+
+# Calculate the number of genes in each dataset, time point, and treatment combination
+gene_counts <- combined_data %>%
+  dplyr::group_by(Dataset, Time, Treatment) %>%
+  dplyr::summarise(count = dplyr::n()) %>%
+  dplyr::ungroup()
+
+# Calculate the total number of genes
+total_genes <- sum(gene_counts$count)
+
+# Define a minimum proportion
+min_proportion <- 0.01
+
+# Calculate the proportion of each subsector and ensure it meets the minimum proportion
+gene_counts <- dplyr::mutate(gene_counts, proportion = pmax(count / total_genes, min_proportion))
+
+# Normalize the proportions to sum to 1 within each main sector (dataset and time)
+gene_counts <- gene_counts %>%
+  dplyr::group_by(Dataset, Time) %>%
+  dplyr::mutate(proportion = proportion / sum(proportion) * (1 - length(proportion) * min_proportion)) %>%
+  dplyr::mutate(proportion = proportion + min_proportion) %>%
+  dplyr::ungroup()
+
+# Create a combined factor for Dataset, Time, and Treatment
+gene_counts <- dplyr::mutate(gene_counts, factor = paste(Dataset, Time, Treatment, sep = "_"))
+
+# Define the desired order of factors to ensure groups are adjacent
+desired_order <- c(
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf RNA"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Leaf Protein"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "CO-IP"]),
+  sort(gene_counts$factor[gene_counts$Dataset == "Root RNA"])
+)
+
+# Prepare factors and sector widths in the desired order
+factors <- factor(gene_counts$factor, levels = desired_order)
+sector_widths <- (gene_counts$proportion / 10)
+
+# Custom colors for treatments
+treatment_colors <- c("wildtype GHu" = "#710019", "mutant GHu" = "#C85250", "wildtype F13" = "#055C9D", "mutant F13" = "#0E86D4")
+
+# Assign colors to each factor based on treatment
+factor_colors <- sapply(levels(factors), function(f) {
+  treatment <- strsplit(f, "_")[[1]][3]
+  treatment_colors[treatment]
+})
+
+# Initialize the link matrix with appropriate dimensions and names
+link_matrix <- matrix(0, nrow = length(factors), ncol = length(factors),
+                      dimnames = list(levels(factors), levels(factors)))
+
+# Fill the link matrix based on overlapping genes
+for (gene in unique(overlapping_genes$Gene)) {
+  gene_data <- overlapping_genes[overlapping_genes$Gene == gene, ]
+  if (nrow(gene_data) > 1) {
+    for (i in 1:(nrow(gene_data) - 1)) {
+      for (j in (i + 1):nrow(gene_data)) {
+        sector1 <- paste(gene_data$Dataset[i], gene_data$Time[i], gene_data$Treatment[i], sep = "_")
+        sector2 <- paste(gene_data$Dataset[j], gene_data$Time[j], gene_data$Treatment[j], sep = "_")
+        link_matrix[sector1, sector2] <- link_matrix[sector1, sector2] + 1
+        link_matrix[sector2, sector1] <- link_matrix[sector2, sector1] + 1
+      }
+    }
+  }
+}
+
+# Convert link matrix to adjacency list
+link_df <- as.data.frame(as.table(link_matrix))
+link_df <- link_df[link_df$Freq > 0, ]
+colnames(link_df) <- c("from", "to", "value")
+
+# Ensure that 'from' and 'to' columns in link_df are characters
+link_df$from <- as.character(link_df$from)
+link_df$to <- as.character(link_df$to)
+
+# Create a color mapping for the links based on the treatment colors
+link_colors <- sapply(1:nrow(link_df), function(i) {
+  from_treatment <- strsplit(link_df$from[i], "_")[[1]][3]
+  to_treatment <- strsplit(link_df$to[i], "_")[[1]][3]
+  if (from_treatment == to_treatment) {
+    treatment_colors[from_treatment]
+  } else {
+    "#CCCCCC"  # Grey for links between different treatments
+  }
+})
+
+### Plotting Block ###
+
+# Set the cell padding and track height
+circos.par(cell.padding = c(0.04, 0, 0.04, 0), track.height = 0.05, gap.after = c(rep(10, length(unique(gene_counts$Dataset)))))
+
+# Clear the circos plot environment before initializing
+circos.clear()
+
+# Initialize the plot before calling circos.initialize
+plot.new()
+
+# Initialize circos plot with dataset categories, time points, and treatments
+circos.initialize(factors = factors, xlim = c(0, 1), sector.width = sector_widths)
+
+# Define border colors for different datasets
+dataset_colors <- c("Leaf RNA" = "darkgreen", "Leaf Protein" = "purple", "CO-IP" = "blue", "Root RNA" = "brown")
+
+# Adding track for each factor with improved layout and custom colors
+circos.track(factors = factors, ylim = c(0, 1), panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  time_label = strsplit(sector.index, "_")[[1]][2]
+  circos.text(CELL_META$xcenter, CELL_META$ylim[1], time_label, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5), cex = 0.6)
+}, bg.col = factor_colors, bg.border = NA)
+
+# Highlight sectors for different datasets
+for(dataset in names(dataset_colors)) {
+  sectors_to_highlight <- gene_counts$factor[grep(dataset, gene_counts$factor)]
+  if (length(sectors_to_highlight) > 0) {
+    highlight.sector(sectors_to_highlight, col = NA, border = dataset_colors[dataset], lwd = 2, padding = c(0.05, 0.0, 0.05, 0.0))
+  }
+}
+
+# Add ribbons based on the link matrix using chordDiagram style
+for (i in 1:nrow(link_matrix)) {
+  for (j in 1:ncol(link_matrix)) {
+    if (link_matrix[i, j] > 0) {
+      transparency <- 1 - (link_matrix[i, j] / max_overlap)
+      circos.link(sector.index1 = rownames(link_matrix)[i], point1 = c(0, 1),
+                  sector.index2 = colnames(link_matrix)[j], point2 = c(0, 1),
+                  col = rgb(0.5, 0.5, 0.5, alpha = 1-transparency), border = NA)
+    }
+  }
+}
+
+# Add numerical labels on the outside of each sector for debugging
+circos.trackPlotRegion(ylim = c(0, 1), bg.border = NA, track.height = 0.1, panel.fun = function(x, y) {
+  sector.index = get.cell.meta.data("sector.index")
+  circos.text(CELL_META$xcenter, CELL_META$ylim[2], sector.index, facing = "outside", niceFacing = TRUE, adj = c(0.5, 1.5), cex = 0.6)
+})
+
+# Adding legend for treatments
+legend("topright", inset = c(-0, 0), legend = names(treatment_colors), fill = treatment_colors, title = "Treatments", xpd = TRUE)
+```
+
+```{r}
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+
+
+# Get the sheet names
+sheet_names <- excel_sheets(file_path)
+
+# Initialize a list to store the data from each sheet and add the sheet name as a prefix to column names
+data_list <- list()
+for (sheet in sheet_names) {
+  data <- read_excel(file_path, sheet = sheet)
+  colnames(data) <- paste(sheet, colnames(data), sep = "_")
+  data_list[[sheet]] <- data
+}
+
+# Extract unique categories (column names) from each sheet
+categories <- unique(unlist(lapply(data_list, colnames)))
+
+# Initialize an empty matrix to store the number of shared entries
+shared_matrix <- matrix(0, nrow = length(categories), ncol = length(categories))
+rownames(shared_matrix) <- categories
+colnames(shared_matrix) <- categories
+
+# Compare entries between categories across all sheets
+for (i in 1:length(categories)) {
+  for (j in 1:length(categories)) {
+    if (i != j) {
+      shared_count <- 0
+      for (sheet_i in sheet_names) {
+        for (sheet_j in sheet_names) {
+          if (categories[i] %in% colnames(data_list[[sheet_i]]) & categories[j] %in% colnames(data_list[[sheet_j]])) {
+            shared_entries <- intersect(data_list[[sheet_i]][[categories[i]]], data_list[[sheet_j]][[categories[j]]])
+            shared_count <- shared_count + length(shared_entries)
+          }
+        }
+      }
+      shared_matrix[i, j] <- shared_count
+    }
+  }
+}
+
+# Convert the matrix to a data frame for better visualization
+shared_df <- as.data.frame(shared_matrix)
+
+# Print the shared entries matrix
+print(shared_df)
+
+```
+

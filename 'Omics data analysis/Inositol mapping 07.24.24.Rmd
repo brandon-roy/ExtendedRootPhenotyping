@@ -1,0 +1,4011 @@
+---
+title: "Inositol pathway map"
+author: "Brandon G Roy"
+date: "2024-07-22"
+output: html_document
+---
+
+```{r}
+
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+controlghu4 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt4", "Control4"),alpha=0.05))
+controlghu7 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt7", "Control7"),alpha=0.05))
+controlghu12 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt12", "Control12"),alpha=0.05))
+f13wtvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_wt4","Control4"),alpha=0.05))
+f13wtvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "f13_wt7","Control7"),alpha=0.05))
+f13wtvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "f13_wt12","Control12"),alpha=0.05))
+ghumuttvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut4","Control4"),alpha=0.05))
+ghumuttvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut7","Control7"),alpha=0.05))
+ghumuttvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut12","Control12"),alpha=0.05))
+f13mutvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_mut4","Control4"),alpha=0.05))
+f13mutvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "f13_mut7","Control7"),alpha=0.05))
+f13mutvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "f13_mut12","Control12"),alpha=0.05))
+
+
+```
+
+```{r}
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  for (term in search_terms) {
+    matched_gene_ids <- annotation$GeneID[grep(term, annotation$Note, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  return(heatmap_df)
+}
+
+
+```
+```{r}
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Normalize by row if necessary
+heatmap_data <- t(scale(t(as.matrix(combined_heatmap_df))))
+
+# Plot the heatmap
+pheatmap(heatmap_data, 
+         scale = "none", 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50), 
+         main = "Gene Expression Heatmap Across Time Points and Treatments")
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments.png", width = 12, height = 10)
+
+
+```
+
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase 1", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase 1", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase 2", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter 4", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Normalize by row if necessary
+heatmap_data <- t(scale(t(as.matrix(combined_heatmap_df))))
+
+# Plot the heatmap
+pheatmap(heatmap_data, 
+         scale = "row", 
+         cluster_rows = T, 
+         cluster_cols = F, gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+
+
+```
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Apply log2 transformation
+  heatmap_df <- log2(heatmap_df + 1)
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase 1", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase 1", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase 2", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter 4", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+
+
+
+search_terms <- c("MYB-like transcription factor")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = F, gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("blue","lightblue", "white", "red"))(50))
+
+search_terms <- c("MYB-related protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = F, gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("blue","lightblue", "white", "red"))(50))
+
+search_terms <- c("cytochrome p450")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, gaps_col = c(25),
+         color = colorRampPalette(c("blue","lightblue", "white", "red"))(50))
+```
+```{r}
+
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to handle multiple search terms and combine results from provided dataframes
+search_and_combine <- function(annotation, search_terms, list_of_dfs) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    
+    term_counts <- data.frame(GeneID = character(0), Time = character(0), Treatment = character(0), log2FoldChange = numeric(0))
+    for (df in list_of_dfs) {
+      df_subset <- df[rownames(df) %in% matched_gene_ids, c("log2FoldChange")]
+      if (nrow(df_subset) > 0) {
+        df_subset$GeneID <- rownames(df_subset)
+        df_subset$Time <- gsub("^.*([0-9]+)$", "\\1", colnames(df_subset)[1])
+        df_subset$Treatment <- gsub("([a-zA-Z_]+)[0-9]+$", "\\1", colnames(df_subset)[1])
+        term_counts <- rbind(term_counts, df_subset)
+      }
+    }
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = log2FoldChange)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  print("Column names after spreading:")
+  print(colnames(heatmap_df))
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  if (all(ordered_columns %in% colnames(heatmap_df))) {
+    heatmap_df <- heatmap_df[, ordered_columns, drop = FALSE]
+  } else {
+    missing_cols <- setdiff(ordered_columns, colnames(heatmap_df))
+    stop(paste("Missing expected columns:", paste(missing_cols, collapse = ", ")))
+  }
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation$GeneID[annotation$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), , drop = FALSE]
+
+  return(heatmap_df)
+}
+
+# List of dataframes containing all genes without filtering by padj and log2FoldChange
+list_of_dfs <- list(controlghu4, controlghu7, controlghu12,
+                    f13wtvscontrol4, f13wtvscontrol7, f13wtvscontrol12,
+                    ghumuttvscontrol4, ghumuttvscontrol7, ghumuttvscontrol12,
+                    f13mutvscontrol4, f13mutvscontrol7, f13mutvscontrol12)
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, list_of_dfs)
+
+# Plot the heatmap
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+
+
+```
+```{r}
+
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to handle multiple search terms and combine results from provided dataframes
+search_and_combine <- function(annotation, search_terms, list_of_dfs, time_points, treatments) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    
+    term_counts <- data.frame(GeneID = character(0), Time = character(0), Treatment = character(0), log2FoldChange = numeric(0))
+    
+    for (i in seq_along(list_of_dfs)) {
+      df <- list_of_dfs[[i]]
+      time_point <- time_points[i]
+      treatment <- treatments[i]
+      
+      df_subset <- df[rownames(df) %in% matched_gene_ids, c("log2FoldChange")]
+      if (nrow(df_subset) > 0) {
+        df_subset$GeneID <- rownames(df_subset)
+        df_subset$Time <- time_point
+        df_subset$Treatment <- treatment
+        term_counts <- rbind(term_counts, df_subset)
+      }
+    }
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Remove rows with NA values
+  combined_df <- combined_df %>% drop_na()
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = log2FoldChange)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  print("Column names after spreading:")
+  print(colnames(heatmap_df))
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  if (all(ordered_columns %in% colnames(heatmap_df))) {
+    heatmap_df <- heatmap_df[, ordered_columns, drop = FALSE]
+  } else {
+    missing_cols <- setdiff(ordered_columns, colnames(heatmap_df))
+    stop(paste("Missing expected columns:", paste(missing_cols, collapse = ", ")))
+  }
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation$GeneID[annotation$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), , drop = FALSE]
+
+  return(heatmap_df)
+}
+
+# List of dataframes containing all genes without filtering by padj and log2FoldChange
+list_of_dfs <- list(controlghu4, controlghu7, controlghu12,
+                    f13wtvscontrol4, f13wtvscontrol7, f13wtvscontrol12,
+                    ghumuttvscontrol4, ghumuttvscontrol7, ghumuttvscontrol12,
+                    f13mutvscontrol4, f13mutvscontrol7, f13mutvscontrol12)
+
+# Corresponding time points and treatments
+time_points <- c("4", "7", "12", "4", "7", "12", "4", "7", "12", "4", "7", "12")
+treatments <- c("ghu_wt", "ghu_wt", "ghu_wt", "f13_wt", "f13_wt", "f13_wt", "ghu_mut", "ghu_mut", "ghu_mut", "f13_mut", "f13_mut", "f13_mut")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, list_of_dfs, time_points, treatments)
+
+# Plot the heatmap
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+
+
+```
+
+
+#This works
+```{r}
+
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to generate the order of gene IDs based on search terms
+get_gene_order <- function(annotation, search_terms) {
+  gene_order <- c()
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    gene_order <- c(gene_order, matched_gene_ids)
+  }
+  return(unique(gene_order)) # Ensure the order is unique
+}
+
+# Function to handle multiple search terms and combine results from provided dataframes
+search_and_combine <- function(annotation, search_terms, list_of_dfs, time_points, treatments) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    
+    term_counts <- data.frame(GeneID = character(0), Time = character(0), Treatment = character(0), log2FoldChange = numeric(0))
+    
+    for (i in seq_along(list_of_dfs)) {
+      df <- list_of_dfs[[i]]
+      time_point <- time_points[i]
+      treatment <- treatments[i]
+      
+      df_subset <- df[rownames(df) %in% matched_gene_ids, c("log2FoldChange"), drop = FALSE]
+      print(paste("Processing:", term, "for", treatment, "at time", time_point))
+      print(paste("Number of matched genes:", nrow(df_subset)))
+      
+      if (nrow(df_subset) > 0) {
+        df_subset$GeneID <- rownames(df_subset)
+        df_subset$Time <- time_point
+        df_subset$Treatment <- treatment
+        term_counts <- rbind(term_counts, df_subset)
+      }
+    }
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  print("Combined dataframe after binding all terms:")
+  print(head(combined_df))
+  print(paste("Total rows in combined dataframe:", nrow(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Remove rows with NA values
+  combined_df <- combined_df %>% drop_na()
+  print("Combined dataframe after removing NAs and duplicates:")
+  print(head(combined_df))
+  print(paste("Total rows after cleaning:", nrow(combined_df)))
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = log2FoldChange)
+  
+  # Check if heatmap_df is created correctly
+  if (is.null(heatmap_df) || ncol(heatmap_df) == 0) {
+    stop("heatmap_df was not created correctly. Please check the combined_df and the spread operation.")
+  }
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  print("Column names after spreading:")
+  print(colnames(heatmap_df))
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  if (all(ordered_columns %in% colnames(heatmap_df))) {
+    heatmap_df <- heatmap_df[, ordered_columns, drop = FALSE]
+  } else {
+    missing_cols <- setdiff(ordered_columns, colnames(heatmap_df))
+    stop(paste("Missing expected columns:", paste(missing_cols, collapse = ", ")))
+  }
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation$GeneID[annotation$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), , drop = FALSE]
+
+  return(heatmap_df)
+}
+
+# List of dataframes containing all genes without filtering by padj and log2FoldChange
+list_of_dfs <- list(controlghu4, controlghu7, controlghu12,
+                    f13wtvscontrol4, f13wtvscontrol7, f13wtvscontrol12,
+                    ghumuttvscontrol4, ghumuttvscontrol7, ghumuttvscontrol12,
+                    f13mutvscontrol4, f13mutvscontrol7, f13mutvscontrol12)
+
+# Corresponding time points and treatments
+time_points <- c("4", "7", "12", "4", "7", "12", "4", "7", "12", "4", "7", "12")
+treatments <- c("ghu_wt", "ghu_wt", "ghu_wt", "f13_wt", "f13_wt", "f13_wt", "ghu_mut", "ghu_mut", "ghu_mut", "f13_mut", "f13_mut", "f13_mut")
+
+search_terms <- c("calcium-dependent protein kinase 4","calcium-dependent protein kinase 6","calcium-dependent protein kinase 10","calcium-dependent protein kinase 11","Calcium-dependent protein kinase family protein")
+
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+search_terms <- "Indole-3-acetic acid-amido synthetase"
+search_terms <- "Auxin-responsive protein"
+
+# Convert to matrix for heatmap
+matrixheatmap <- as.matrix(combined_heatmap_df)
+# Plot the heatmap
+pheatmap(matrixheatmap, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE, 
+         gaps_col = c(3,6,9,12), 
+         gaps_row = c(), fontsize_row=10, height = 100,
+         color = colorRampPalette(c("blue","white", "red"))(100))
+
+```
+
+
+```{r}
+
+search_terms <- "Indole-3-acetic acid-amido synthetase"
+search_terms <- "DNA METHYL"
+search_terms <- "Histone deacetylase"
+
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+
+
+# Convert to matrix for heatmap
+matrixheatmap <- as.matrix(combined_heatmap_df)
+# Plot the heatmap
+pheatmap(matrixheatmap, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE, 
+         gaps_col = c(3,6,9,12), 
+         gaps_row = c(), fontsize_row=10, height = 100,
+         color = colorRampPalette(c("blue","white", "red","red"))(10))
+
+```
+
+
+
+
+```{r}
+
+
+
+
+
+
+
+
+
+
+
+
+# Define your search terms
+search_terms1 <- c("Inositol-3-phosphate synthase", "Phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol polyphosphate multikinase")
+
+search_terms2 <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Type I inositol 1,4,5-trisphosphate 5-phosphatase 1", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "inositol polyphosphate 5-phosphatase", "Multiple inositol polyphosphate phosphatase", "Inositol oxygenase 1", "inositol monoxygenase", "phosphatidic acid phosphohydrolase","PLC-like phosphodiesterases superfamily protein")
+
+search_terms3 <- c("Inositol transporter", "Sec14p-like phosphatidylinositol transfer family protein", "Phosphatidylinositol transfer protein SFH5", "inositol transfer",  "Phosphatidylinositide phosphatase SAC", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "D-inositol 3-phosphate glycosyltransferase", "1D-myo-inositol 2-acetamido-2-deoxy-alpha-D-glucopyranoside deacetylase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "Phosphatidylinositol N-acetylglucosaminyltransferase")
+
+# Load necessary libraries
+library(dplyr)
+
+# Function to get gene names from annotation based on a vector of GeneIDs
+get_gene_names <- function(gene_ids, annotation) {
+  # Ensure the gene_ids vector is unique and ordered as provided
+  gene_ids <- unique(gene_ids)
+  
+  # Subset the annotation dataframe based on the provided gene_ids and preserve order
+  gene_names_df <- annotation %>%
+    filter(GeneID %in% gene_ids) %>%
+    select(GeneID, Note) %>%
+    arrange(match(GeneID, gene_ids))
+  
+  return(gene_names_df)
+}
+
+
+# Get the gene names based on the provided gene_ids
+gene_names_df <- get_gene_names(gene_order, annotation2)
+
+# Print the resulting dataframe
+print(gene_names_df)
+
+
+
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms1)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms1, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df1 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms2)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms2, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df2 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms3)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms3, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df3 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+
+
+gene_names_df <- get_gene_names(gene_order, annotation2)
+list <- c(noquote(rownames(combined_heatmap_df3)))
+
+gene_names_df <- get_gene_names(list, annotation2)
+
+
+
+# Plot the first heatmap with row gaps
+pheatmap(combined_heatmap_df1, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE, 
+         gaps_row = c(3),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+combined_heatmap_df1
+
+
+# Plot the second heatmap
+pheatmap(combined_heatmap_df2, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(7,18,21,25),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+# Plot the second heatmap
+pheatmap(combined_heatmap_df3, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(2,36,51,54,56),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+```
+
+```{r}
+search_terms4 <- c("pseudourid","pus10","hexokinase","uridylyltransferase")
+search_terms4 <- c("serine protease")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("callose synthase")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "red","white", "blue"))(50))
+
+search_terms4 <- c("acidic ribosomal protein")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("dicer","argonaute","RNAse")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(3,19),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("DnaJ")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("callose synthase", "glucanase", "ABC transporter ATP-binding protein/permease PDR18")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(8,27),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("callose synthase", "glucan-b")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(8),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+
+search_terms4 <- c("auxin response factor")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = F,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("guanine nucleotide-binding")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("pex14","pex16", "peroxisome biogenesis", "peroxisome assembly")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(5,7, 11),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("ethylene")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("inositolphosphotransferase")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "column", 
+         cluster_rows = T, 
+         cluster_cols = F,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+MIND
+search_terms4 <- c("nucleosome","SNF1", "SNF2")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(14,38),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("cold","temperature")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(8),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("traffic")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("GAT family protein","thioredoxin")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(7),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+
+
+search_terms4 <- c("Sterile alpha motif", "pleckstrin")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(19),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("sucrose synthase","sucrose transport", "sucrose-")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(6),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+
+search_terms4 <- c("Vesicle-associated membrane protein")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+search_terms4 <- c("dead")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue","blue"))(50))
+
+search_terms4 <- c("remorin")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red","white", "blue"))(50))
+
+search_terms4 <- c("GRPE", "HSP70","prefoldin")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(6,10),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red","white", "blue"))(50))
+
+search_terms4 <- c("hsp70", "Heat shock 70 kDa protein", "Heat shock-related 70 kDa protein")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "column", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(4,36),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+
+search_terms4 <- c("DNAJ")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "blue"))(50))
+
+
+
+search_terms4 <- c("17.6 kDa")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "lightblue","blue"))(50))
+
+
+search_terms4 <- c("Activator of 90 kDa heat shock protein ATPase")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "lightblue","blue"))(50))
+
+
+
+search_terms4 <- c("17.3 kDa class II heat shock protein")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "lightblue","blue"))(50))
+
+search_terms4 <- c("kinase kinase")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red","red", "white","blue"))(50))
+
+search_terms4 <- c("17.6 kDa class I heat shock protein")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white", "lightblue","blue"))(50))
+
+
+search_terms4 <- c("phosphoinositide")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+
+
+search_terms4 <- c("WD repeat-containing protein")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+
+
+search_terms4 <- c("sec24","SUMO")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE,  
+         gaps_row = c(7),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+search_terms4 <- c("importin")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+search_terms4 <- c("proteasome")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = FALSE,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+search_terms4 <- c("succinate dehydrogenase")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = T,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+
+
+search_terms4 <- c("Auxin-responsive protein IAA")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "column", 
+         cluster_rows = T, 
+         cluster_cols = F,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+search_terms4 <- c("phosphatase 2C family protein")
+# Generate the order of gene IDs based on the search terms
+gene_order <- get_gene_order(annotation2, search_terms4)
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms4, list_of_dfs, time_points, treatments)
+# Reorder the combined dataframe based on the gene order
+combined_heatmap_df4 <- combined_heatmap_df[gene_order[gene_order %in% rownames(combined_heatmap_df)], ]
+pheatmap(combined_heatmap_df4, 
+         scale = "none", 
+         cluster_rows = T, 
+         cluster_cols = F,  
+         gaps_row = c(),
+         gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("red", "white","blue"))(50))
+```
+
+
+
+```{r}
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Apply log2 transformation
+  heatmap_df <- log2(heatmap_df + 1)
+  
+  # Ensure rows are in the original order of gene IDs within each search term
+  ordered_gene_ids <- unlist(lapply(search_terms, function(term) {
+    annotation$GeneID[grep(clean_term(term), annotation$CleanNote, ignore.case = TRUE)]
+  }))
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), ]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_log2.png", width = 20, height = 40)
+
+```
+
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Apply log2 transformation
+  heatmap_df <- log2(heatmap_df + 1)
+  
+  # Ensure rows are in the original order of gene IDs within each search term
+  ordered_gene_ids <- unlist(lapply(search_terms, function(term) {
+    annotation$GeneID[grep(clean_term(term), annotation$CleanNote, ignore.case = TRUE)]
+  }))
+  
+  # Filter out gene IDs that are not in the heatmap dataframe
+  ordered_gene_ids <- ordered_gene_ids[ordered_gene_ids %in% rownames(heatmap_df)]
+  
+  # Order the dataframe rows according to the ordered_gene_ids
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), ]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+```
+```{r}
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Apply log2 transformation
+  heatmap_df <- log2(heatmap_df + 1)
+  
+  # Ensure rows are in the original order of gene IDs within each search term
+  ordered_gene_ids <- unlist(lapply(search_terms, function(term) {
+    annotation$GeneID[grep(clean_term(term), annotation$CleanNote, ignore.case = TRUE)]
+  }))
+  
+  # Filter out gene IDs that are not in the heatmap dataframe
+  ordered_gene_ids <- ordered_gene_ids[ordered_gene_ids %in% rownames(heatmap_df)]
+  
+  # Order the dataframe rows according to the ordered_gene_ids
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), ]
+  
+  # Replace NA with 0 or a small value if preferred
+  heatmap_df[is.na(heatmap_df)] <- 0
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = F, gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_log2.png", width = 12, height = 10)
+
+```
+```{r}
+
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Ensure rows are in the original order of gene IDs within each search term
+  ordered_gene_ids <- unlist(lapply(search_terms, function(term) {
+    annotation$GeneID[grep(clean_term(term), annotation$CleanNote, ignore.case = TRUE)]
+  }))
+  
+  # Filter out gene IDs that are not in the heatmap dataframe or that have missing values
+  ordered_gene_ids <- ordered_gene_ids[ordered_gene_ids %in% rownames(heatmap_df)]
+  heatmap_df <- heatmap_df[complete.cases(heatmap_df), ]  # Remove rows with NA values
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), ]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with normalized data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(1500))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_normalized.png", width = 12, height = 10)
+
+
+```
+```{r}
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Apply log2 transformation
+  heatmap_df <- log2(heatmap_df + 1)
+  
+  # Ensure rows are in the original order of gene IDs within each search term
+  ordered_gene_ids <- unlist(lapply(search_terms, function(term) {
+    annotation$GeneID[grep(clean_term(term), annotation$CleanNote, ignore.case = TRUE)]
+  }))
+  
+  # Filter out gene IDs that are not in the heatmap dataframe or that have missing values
+  ordered_gene_ids <- ordered_gene_ids[ordered_gene_ids %in% rownames(heatmap_df)]
+  heatmap_df <- heatmap_df[complete.cases(heatmap_df), ]  # Remove rows with NA values
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), ]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data and central value zero
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50), 
+         main = "Gene Expression Heatmap Across Time Points and Treatments (Log2 Transformed)", 
+         breaks = seq(-10, 10, length.out = 100),  # Center the color scale around zero
+         legend_breaks = c(-10, -5, 0, 5, 10), 
+         legend_labels = c("-10", "-5", "0", "5", "10"))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_log2.png", width = 12, height = 10)
+
+```
+```{r}
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ComplexHeatmap)
+library(circlize)
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Print debug information
+  print(paste("Combined dataframe before removing duplicates:"))
+  print(head(combined_df))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Print debug information
+  print(paste("Combined dataframe after removing duplicates:"))
+  print(head(combined_df))
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Print debug information
+  print(paste("Heatmap dataframe:"))
+  print(head(heatmap_df))
+  
+  return(heatmap_df)
+}
+
+# Function to calculate log2 fold changes relative to control
+calculate_log2_fold_changes <- function(avg_df) {
+  # Checkpoint: Print avg_df before reshaping
+  print("Checkpoint 6: Average dataframe before reshaping")
+  print(head(avg_df))
+  
+  # Ensure columns exist
+  if (!all(c("GeneID", "Time", "Treatment") %in% colnames(avg_df))) {
+    stop("Columns `GeneID`, `Time`, or `Treatment` do not exist in the dataframe.")
+  }
+  
+  # Spread the dataframe to wide format for calculations
+  wide_df <- avg_df %>%
+    tidyr::unite("Condition", Treatment, Time, sep = "_") %>%
+    tidyr::spread(key = Condition, value = AverageCount)
+  
+  # Checkpoint: Print wide_df before calculations
+  print("Checkpoint 7: Wide dataframe before calculations")
+  print(head(wide_df))
+  
+  # Calculate log2 fold changes relative to control for each treatment
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13mut", "f13wt", "ghumut", "ghuwt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      if (control_col %in% colnames(wide_df) & treatment_col %in% colnames(wide_df)) {
+        wide_df[[treatment_col]] <- log2(wide_df[[treatment_col]] / wide_df[[control_col]] + 1)
+      }
+    }
+  }
+  
+  # Remove control columns
+  wide_df <- wide_df[, !grepl("Control", colnames(wide_df))]
+  
+  # Checkpoint: Print wide_df after calculations
+  print("Checkpoint 8: Wide dataframe after calculations")
+  print(head(wide_df))
+  
+  return(wide_df)
+}
+
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Normalize by row if necessary
+heatmap_data <- t(scale(t(as.matrix(combined_heatmap_df))))
+
+# Plot the heatmap
+Heatmap(as.matrix(heatmap_data), name = "log2 fold change", 
+        col = colorRamp2(c(-3, 0, 3), c("blue", "white", "red")),
+        cluster_rows = F, cluster_columns = FALSE, show_row_names = TRUE, show_column_names = TRUE)
+
+
+
+
+
+```
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to handle multiple search terms and extract counts
+search_and_extract_counts <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    matched_gene_ids <- matched_gene_ids[matched_gene_ids %in% rownames(dds_out)]
+    
+    if (length(matched_gene_ids) > 0) {
+      counts <- as.data.frame(counts(dds_out, normalized = TRUE)[matched_gene_ids, ])
+      counts$GeneID <- rownames(counts)
+      combined_counts[[term]] <- counts
+    }
+  }
+  
+  # Debugging step: Print the structure of the first few elements
+  str(combined_counts[1:min(length(combined_counts), 3)])
+  
+  # Ensure that all dataframes have the same columns
+  column_names <- colnames(combined_counts[[1]])
+  for (i in 2:length(combined_counts)) {
+    if (!identical(column_names, colnames(combined_counts[[i]]))) {
+      stop("Column names do not match in all dataframes.")
+    }
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Reshape dataframe to long format using dplyr and tidyr functions
+  long_df <- combined_df %>%
+    tidyr::gather(key = "Sample", value = "NormalizedCount", -GeneID) %>%
+    tidyr::separate(Sample, into = c("Treatment", "Time"), sep = "_")
+  
+  return(long_df)
+}
+
+# Function to calculate log2 fold changes relative to control
+calculate_log2_fold_changes <- function(long_df) {
+  # Spread the dataframe to wide format for calculations using tidyr functions
+  wide_df <- long_df %>%
+    tidyr::spread(key = Treatment, value = NormalizedCount)
+  
+  # Calculate log2 fold changes relative to control for each treatment
+  for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+    wide_df[[treatment]] <- log2(wide_df[[treatment]] + 1) - log2(wide_df$Control + 1)
+  }
+  
+  # Select relevant columns and reshape back to long format using dplyr and tidyr functions
+  log2_fold_changes <- wide_df %>%
+    dplyr::select(GeneID, Time, f13_mut, f13_wt, ghu_mut, ghu_wt) %>%
+    tidyr::gather(key = "Treatment", value = "Log2FoldChange", -GeneID, -Time)
+  
+  return(log2_fold_changes)
+}
+
+# Function to prepare heatmap dataframe
+prepare_heatmap_df <- function(log2_fold_changes, search_terms, annotation) {
+  # Spread the dataframe to wide format for heatmap using tidyr functions
+  heatmap_df <- log2_fold_changes %>%
+    tidyr::unite("Condition", Treatment, Time, sep = "_") %>%
+    tidyr::spread(key = Condition, value = Log2FoldChange)
+  
+  # Ensure rows are in the original order of gene IDs within each search term
+  ordered_gene_ids <- unlist(lapply(search_terms, function(term) {
+    annotation$GeneID[grep(clean_term(term), annotation$CleanNote, ignore.case = TRUE)]
+  }))
+  
+  # Filter out gene IDs that are not in the heatmap dataframe
+  ordered_gene_ids <- ordered_gene_ids[ordered_gene_ids %in% rownames(heatmap_df)]
+  
+  # Order the dataframe rows according to the ordered_gene_ids
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), ]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns, drop = FALSE]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Extract counts for the relevant genes
+long_df <- search_and_extract_counts(annotation2, search_terms, dds_out)
+
+# Calculate log2 fold changes relative to control
+log2_fold_changes <- calculate_log2_fold_changes(long_df)
+
+# Prepare the heatmap dataframe
+combined_heatmap_df <- prepare_heatmap_df(log2_fold_changes, search_terms, annotation2)
+
+# Plot the heatmap with log2 fold changes
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50), 
+         main = "Gene Expression Heatmap Across Time Points and Treatments (Log2 Fold Changes)")
+
+```
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to handle multiple search terms and extract average counts
+search_and_extract_counts <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    matched_gene_ids <- matched_gene_ids[matched_gene_ids %in% rownames(dds_out)]
+    
+    if (length(matched_gene_ids) > 0) {
+      counts <- as.data.frame(counts(dds_out, normalized = TRUE)[matched_gene_ids, ])
+      counts$GeneID <- rownames(counts)
+      combined_counts[[term]] <- counts
+    }
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Reshape dataframe to long format
+  long_df <- combined_df %>%
+    tidyr::gather(key = "Sample", value = "NormalizedCount", -GeneID)
+  
+  # Separate Sample into Time, Treatment, and Replicate
+  long_df <- long_df %>%
+    tidyr::separate(Sample, into = c("Time", "Treatment", "Replicate"), sep = "_", remove = FALSE)
+  
+  # Calculate average expression per gene, time, and treatment
+  avg_df <- long_df %>%
+    group_by(GeneID, Time, Treatment) %>%
+    summarize(AverageCount = mean(NormalizedCount, na.rm = TRUE)) %>%
+    ungroup()
+  
+  return(avg_df)
+}
+
+# Function to calculate log2 fold changes relative to control
+calculate_log2_fold_changes <- function(avg_df) {
+  # Spread the dataframe to wide format for calculations
+  wide_df <- avg_df %>%
+    tidyr::unite("Condition", Treatment, Time, sep = "_") %>%
+    tidyr::spread(key = Condition, value = AverageCount)
+  
+  # Calculate log2 fold changes relative to control for each treatment
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13mut", "f13wt", "ghumut", "ghuwt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      if (control_col %in% colnames(wide_df) & treatment_col %in% colnames(wide_df)) {
+        wide_df[[treatment_col]] <- log2(wide_df[[treatment_col]] / wide_df[[control_col]] + 1)
+      }
+    }
+  }
+  
+  # Remove control columns
+  wide_df <- wide_df[, !grepl("Control", colnames(wide_df))]
+  
+  return(wide_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+avg_df <- search_and_extract_counts(annotation2, search_terms, dds_out)
+
+# Calculate log2 fold changes
+log2_fold_changes_df <- calculate_log2_fold_changes(avg_df)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(log2_fold_changes_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, gaps_col = c(3,6,9,12),
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+
+
+```
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ComplexHeatmap)
+library(circlize)
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Print debug information
+  print(paste("Combined dataframe before removing duplicates:"))
+  print(head(combined_df))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Print debug information
+  print(paste("Combined dataframe after removing duplicates:"))
+  print(head(combined_df))
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Print debug information
+  print(paste("Heatmap dataframe:"))
+  print(head(heatmap_df))
+  
+  return(heatmap_df)
+}
+
+# Function to calculate log2 fold changes relative to control
+calculate_log2_fold_changes <- function(heatmap_df) {
+  # Checkpoint: Print heatmap_df before reshaping
+  print("Checkpoint 6: Heatmap dataframe before reshaping")
+  print(head(heatmap_df))
+  
+  # Ensure columns exist
+  col_names <- colnames(heatmap_df)
+  if (!any(grepl("Control_", col_names))) {
+    stop("Control columns do not exist in the dataframe.")
+  }
+  
+  # Calculate log2 fold changes relative to control for each treatment
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13mut", "f13wt", "ghumut", "ghuwt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      if (control_col %in% colnames(heatmap_df) & treatment_col %in% colnames(heatmap_df)) {
+        heatmap_df[[treatment_col]] <- log2(heatmap_df[[treatment_col]] / heatmap_df[[control_col]] + 1)
+      }
+    }
+  }
+  
+  # Remove control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13mut_4", "f13wt_4", "ghumut_4", "ghuwt_4",
+    "f13mut_7", "f13wt_7", "ghumut_7", "ghuwt_7",
+    "f13mut_12", "f13wt_12", "ghumut_12", "ghuwt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Checkpoint: Print heatmap_df after calculations
+  print("Checkpoint 7: Heatmap dataframe after calculations")
+  print(head(heatmap_df))
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Calculate log2 fold changes
+log2_fold_changes_df <- calculate_log2_fold_changes(combined_heatmap_df)
+
+# Plot the heatmap
+Heatmap(as.matrix(combined_heatmap_df), name = "log2 fold change", 
+        col = colorRamp2(c(-3, 0, 3), c("blue", "white", "red")),
+        cluster_rows = TRUE, cluster_columns = FALSE, show_row_names = TRUE, show_column_names = TRUE)
+
+
+```
+```{r}
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term:", term))
+      next
+    }
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Check for missing values before log2 transformation
+  print("Missing values before log2 transformation:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Replace any remaining NaNs or negative values with a small positive value
+  heatmap_df[is.na(heatmap_df) | heatmap_df < 0] <- 0
+  
+  # Apply log2 transformation
+  heatmap_df <- log2(heatmap_df + 10)
+  
+  # Check for missing values after log2 transformation
+  print("Missing values after log2 transformation:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation2$GeneID[annotation2$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), ]
+
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+
+
+
+
+```
+```{r}
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term:", term))
+      next
+    }
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Check for missing values before plotting
+  print("Missing values before plotting:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Print the counts collected for the heatmap prior to replacing NaNs
+  print("Counts collected for the heatmap prior to replacing NaNs:")
+  print(head(heatmap_df))
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation2$GeneID[annotation2$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), ]
+
+  return(heatmap_df)
+}
+
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "row", 
+         cluster_rows = F, 
+         cluster_cols = F, 
+         color = colorRampPalette(c("blue", "white", "red"))(1000),
+         legend = T)
+
+```
+```{r}
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term:", term))
+      next
+    }
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Check for missing values before plotting
+  print("Missing values before plotting:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Print the counts collected for the heatmap prior to replacing NaNs
+  print("Counts collected for the heatmap prior to replacing NaNs:")
+  print(head(heatmap_df))
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation2$GeneID[annotation2$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), ]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with original data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(3))
+
+
+
+
+```
+```{r}
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term:", term))
+      next
+    }
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate log2 fold change (log2FC)
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- log2((heatmap_df[[treatment_col]] + 1) / (heatmap_df[[control_col]] + 1))
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Check for missing values before plotting
+  print("Missing values before plotting:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Print the counts collected for the heatmap prior to replacing NaNs
+  print("Counts collected for the heatmap prior to replacing NaNs:")
+  print(head(heatmap_df))
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation2$GeneID[annotation2$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), ]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2FC transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_log2FC.png", width = 12, height = 10)
+
+```
+```{r}
+
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  used_gene_ids <- c()  # To track used gene IDs and avoid duplicates
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    # Filter out duplicate gene IDs
+    matched_gene_ids <- matched_gene_ids[!matched_gene_ids %in% used_gene_ids]
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term or duplicates ignored:", term))
+      next
+    }
+    
+    used_gene_ids <- c(used_gene_ids, matched_gene_ids)
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Check for missing values before plotting
+  print("Missing values before plotting:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Print the counts collected for the heatmap prior to replacing NaNs
+  print("Counts collected for the heatmap prior to replacing NaNs:")
+  print(head(heatmap_df))
+  
+  # Ensure rows are in the order they were found by the search terms
+  heatmap_df <- heatmap_df[match(used_gene_ids, rownames(heatmap_df)), , drop = FALSE]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with original data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+
+
+```
+```{r}
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  used_gene_ids <- c()  # To track used gene IDs and avoid duplicates
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    # Filter out duplicate gene IDs
+    matched_gene_ids <- matched_gene_ids[!matched_gene_ids %in% used_gene_ids]
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term or duplicates ignored:", term))
+      next
+    }
+    
+    used_gene_ids <- c(used_gene_ids, matched_gene_ids)
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts <- rbind(combined_counts, term_counts)
+  }
+  
+  # Convert combined_counts to a dataframe
+  combined_df <- as.data.frame(do.call(rbind, combined_counts))
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Ensure rows are in the order they were found by the search terms
+  heatmap_df <- heatmap_df[match(used_gene_ids, rownames(heatmap_df)), , drop = FALSE]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with original data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+
+```
+```{r}
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results while preserving order
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  used_gene_ids <- c()  # To track used gene IDs and avoid duplicates
+  ordered_gene_ids <- c() # To keep the ordered list of gene IDs
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    # Filter out duplicate gene IDs
+    matched_gene_ids <- matched_gene_ids[!matched_gene_ids %in% used_gene_ids]
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term or duplicates ignored:", term))
+      next
+    }
+    
+    used_gene_ids <- c(used_gene_ids, matched_gene_ids)
+    ordered_gene_ids <- c(ordered_gene_ids, matched_gene_ids)
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts <- rbind(combined_counts, term_counts)
+  }
+  
+  # Convert combined_counts to a dataframe
+  combined_df <- as.data.frame(do.call(rbind, combined_counts))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Ensure rows are in the order they were found by the search terms
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), , drop = FALSE]
+  
+  return(heatmap_df)
+}
+
+
+
+```
+```{r}
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation2 <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results while preserving order
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  used_gene_ids <- c()  # To track used gene IDs and avoid duplicates
+  ordered_gene_ids <- c() # To keep the ordered list of gene IDs
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    # Filter out duplicate gene IDs
+    matched_gene_ids <- matched_gene_ids[!matched_gene_ids %in% used_gene_ids]
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term or duplicates ignored:", term))
+      next
+    }
+    
+    used_gene_ids <- c(used_gene_ids, matched_gene_ids)
+    ordered_gene_ids <- c(ordered_gene_ids, matched_gene_ids)
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      data.frame(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts <- rbind(combined_counts, term_counts)
+  }
+  
+  # Convert combined_counts to a dataframe
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Ensure rows are in the order they were found by the search terms
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), , drop = FALSE]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with original data and specified row order
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Example loading commands (adjust file paths accordingly)
+# annotation2 <- read.csv("path_to_annotation_file.csv")
+# dds_out <- readRDS("path_to_dds_out.rds")
+
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- as.data.frame(plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE))
+      count_data[[gene_id]]$GeneID <- gene_id
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results while preserving order
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- list()
+  used_gene_ids <- c()  # To track used gene IDs and avoid duplicates
+  ordered_gene_ids <- c() # To keep the ordered list of gene IDs
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    # Filter out duplicate gene IDs
+    matched_gene_ids <- matched_gene_ids[!matched_gene_ids %in% used_gene_ids]
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term or duplicates ignored:", term))
+      next
+    }
+    
+    used_gene_ids <- c(used_gene_ids, matched_gene_ids)
+    ordered_gene_ids <- c(ordered_gene_ids, matched_gene_ids)
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, normalized_counts)
+    
+    combined_counts <- rbind(combined_counts, term_counts)
+  }
+  
+  # Convert combined_counts to a dataframe
+  combined_df <- as.data.frame(combined_counts)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_df)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Ensure rows are in the order they were found by the search terms
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), , drop = FALSE]
+  
+  return(heatmap_df)
+}
+```
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Define your function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      df <- as.data.frame(plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE))
+      df$GeneID <- gene_id
+      count_data[[gene_id]] <- df
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results while preserving order
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- data.frame() # Initialize an empty dataframe
+  used_gene_ids <- c()  # To track used gene IDs and avoid duplicates
+  ordered_gene_ids <- c() # To keep the ordered list of gene IDs
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    # Filter out duplicate gene IDs
+    matched_gene_ids <- matched_gene_ids[!matched_gene_ids %in% used_gene_ids]
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term or duplicates ignored:", term))
+      next
+    }
+    
+    used_gene_ids <- c(used_gene_ids, matched_gene_ids)
+    ordered_gene_ids <- c(ordered_gene_ids, matched_gene_ids)
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, normalized_counts)
+    
+    combined_counts <- rbind(combined_counts, term_counts)
+  }
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_counts)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_counts %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Ensure rows are in the order they were found by the search terms
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), , drop = FALSE]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+combined_heatmap_df2 <- as.matrix(combined_heatmap_df)
+# Plot the heatmap with original data and specified row order
+pheatmap(combined_heatmap_df2, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_original.png", width = 12, height = 10)
+
+
+```
+```{r}
+
+# Load necessary libraries
+library(DESeq2)
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+library(ggplot2)
+
+# Define your function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      df <- as.data.frame(plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE))
+      df$GeneID <- gene_id
+      count_data[[gene_id]] <- df
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results while preserving order
+search_and_combine <- function(annotation2, search_terms, dds_out) {
+  combined_counts <- data.frame() # Initialize an empty dataframe
+  used_gene_ids <- c()  # To track used gene IDs and avoid duplicates
+  ordered_gene_ids <- c() # To keep the ordered list of gene IDs
+  
+  # Check if 'Note' column exists
+  if (!"Note" %in% colnames(annotation2)) {
+    stop("The 'Note' column is missing from the annotation2 dataframe.")
+  }
+  
+  # Clean and normalize annotation notes
+  annotation2$CleanNote <- tolower(gsub("[\\s-]", "", annotation2$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation2$GeneID[grep(clean_term, annotation2$CleanNote, ignore.case = TRUE)]
+    
+    # Filter out duplicate gene IDs
+    matched_gene_ids <- matched_gene_ids[!matched_gene_ids %in% used_gene_ids]
+    if (length(matched_gene_ids) == 0) {
+      print(paste("No matches found for term or duplicates ignored:", term))
+      next
+    }
+    
+    used_gene_ids <- c(used_gene_ids, matched_gene_ids)
+    ordered_gene_ids <- c(ordered_gene_ids, matched_gene_ids)
+    
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, normalized_counts)
+    
+    combined_counts <- rbind(combined_counts, term_counts)
+  }
+  
+  # Remove rows with NA values
+  combined_counts <- combined_counts %>% drop_na()
+  
+  # Remove duplicated gene IDs
+  combined_counts <- combined_counts %>% distinct(GeneID, .keep_all = TRUE)
+  
+  # Check for missing values
+  print("Missing values after combining counts:")
+  print(sum(is.na(combined_counts)))
+  
+  # Ensure that each row is unique
+  combined_df <- combined_counts %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+      treatment_col <- paste(treatment, time, sep = "_")
+      heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns]
+  
+  # Ensure rows are in the order they were found by the search terms
+  heatmap_df <- heatmap_df[match(ordered_gene_ids, rownames(heatmap_df)), , drop = FALSE]
+  
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with original data and specified row order
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = FALSE, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_original.png", width = 12, height = 10)
+
+
+
+```
+```{r}
+# Function to normalize and clean search terms
+clean_term <- function(term) {
+  term <- tolower(term)
+  term <- gsub("[\\s-]", "", term) # Remove spaces and hyphens
+  return(term)
+}
+
+# Function to extract normalized count data for a list of gene IDs
+extract_normalized_counts <- function(gene_ids, dds_out) {
+  count_data <- list()
+  for (gene_id in gene_ids) {
+    if (gene_id %in% rownames(dds_out)) {
+      count_data[[gene_id]] <- plotCounts(dds_out, gene = gene_id, intgroup = c('Time', 'Treatment'), normalized = TRUE, returnData = TRUE)
+    }
+  }
+  return(count_data)
+}
+
+# Function to handle multiple search terms and combine results
+search_and_combine <- function(annotation, search_terms, dds_out) {
+  combined_counts <- list()
+  
+  # Clean and normalize annotation notes
+  annotation$CleanNote <- tolower(gsub("[\\s-]", "", annotation$Note))
+  
+  for (term in search_terms) {
+    clean_term <- clean_term(term)
+    matched_gene_ids <- annotation$GeneID[grep(clean_term, annotation$CleanNote, ignore.case = TRUE)]
+    normalized_counts <- extract_normalized_counts(matched_gene_ids, dds_out)
+    
+    term_counts <- do.call(rbind, lapply(names(normalized_counts), function(gene_id) {
+      cbind(GeneID = gene_id, normalized_counts[[gene_id]])
+    }))
+    
+    combined_counts[[term]] <- term_counts
+  }
+  
+  combined_df <- do.call(rbind, combined_counts)
+  
+  # Ensure that each row is unique
+  combined_df <- combined_df %>% distinct(GeneID, Time, Treatment, .keep_all = TRUE)
+  
+  # Remove rows with NA values
+  combined_df <- combined_df %>% drop_na()
+  
+  # Remove duplicated gene IDs
+  combined_df <- combined_df %>% distinct(GeneID, .keep_all = TRUE)
+  
+  # Ensure the correct order of Time points
+  combined_df$Time <- factor(combined_df$Time, levels = c("4", "7", "12"))
+  
+  # Spread the dataframe to have treatments/time points as columns
+  heatmap_df <- combined_df %>%
+    unite("Condition", Treatment, Time, sep = "_") %>%
+    spread(key = Condition, value = count)
+  
+  # Set GeneID as rownames
+  rownames(heatmap_df) <- heatmap_df$GeneID
+  heatmap_df <- heatmap_df[, -1]
+  
+  # Check for missing values
+  print("Missing values after spreading:")
+  print(sum(is.na(heatmap_df)))
+  print("Column names after spreading:")
+  print(colnames(heatmap_df))
+  
+  # Calculate relative expression levels
+  for (time in c("4", "7", "12")) {
+    control_col <- paste("Control", time, sep = "_")
+    if (control_col %in% colnames(heatmap_df)) {
+      for (treatment in c("f13_mut", "f13_wt", "ghu_mut", "ghu_wt")) {
+        treatment_col <- paste(treatment, time, sep = "_")
+        if (treatment_col %in% colnames(heatmap_df)) {
+          heatmap_df[[treatment_col]] <- heatmap_df[[treatment_col]] - heatmap_df[[control_col]]
+        } else {
+          print(paste("Column not found:", treatment_col))
+        }
+      }
+    } else {
+      print(paste("Column not found:", control_col))
+    }
+  }
+  
+  # Remove Control columns
+  heatmap_df <- heatmap_df[, !grepl("Control", colnames(heatmap_df))]
+  
+  # Order the columns correctly
+  ordered_columns <- c(
+    "f13_mut_4", "f13_mut_7", "f13_mut_12",
+    "f13_wt_4", "f13_wt_7", "f13_wt_12",
+    "ghu_mut_4", "ghu_mut_7", "ghu_mut_12",
+    "ghu_wt_4", "ghu_wt_7", "ghu_wt_12"
+  )
+  heatmap_df <- heatmap_df[, ordered_columns, drop = FALSE]
+  
+  # Apply log2 transformation
+  heatmap_df <- log2(heatmap_df + 1)
+  
+  # Ensure rows are in the original order of gene IDs
+  heatmap_df <- heatmap_df[match(annotation$GeneID[annotation$GeneID %in% rownames(heatmap_df)], rownames(heatmap_df)), , drop = FALSE]
+
+  return(heatmap_df)
+}
+
+# Define your search terms
+search_terms <- c("Inositol monophosphatase", "Inositol-phosphate phosphatase", "Inositol-1-monophosphatase", "Inositol-3-phosphate synthase", "phosphatidylinositol synthase", "Phosphatidylinositol 3-kinase", "Phosphatidylinositol 4-kinase", "phosphatidylinositol kinase", "Phosphatidylinositol 3- and 4-kinase", "Phosphatidylinositol 4-phosphate 5-kinase", "phosphatidylinositol-4-phosphate 5-kinase family protein", "Type I inositol 1,4,5-trisphosphate 5-phosphatase", "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase", "CDP-diacylglycerol-inositol 3-phosphatidyltransferase", "1-phosphatidylinositol 4,5-bisphosphate phosphodiesterase", "PLC-like phosphodiesterases superfamily protein", "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase", "Inositol oxygenase", "Inositol polyphosphate multikinase", "Inositol-1,4,5-trisphosphate 5-phosphatase", "Inositol-pentakisphosphate 2-kinase", "Inositol-tetrakisphosphate 1-kinase", "Multiple inositol polyphosphate phosphatase", "D-inositol 3-phosphate glycosyltransferase", "Phosphatidylinositol-binding clathrin assembly protein", "Phosphatidylinositol:ceramide inositolphosphotransferase", "Sec14p-like phosphatidylinositol transfer family protein", "Inositol transporter", "Phosphatidylinositol transfer protein SFH5", "Phosphoinositide phosphatase family protein")
+
+# Call the function to get the combined dataframe
+combined_heatmap_df <- search_and_combine(annotation2, search_terms, dds_out)
+
+# Plot the heatmap with log2 transformed data
+pheatmap(combined_heatmap_df, 
+         scale = "none", 
+         cluster_rows = F, 
+         cluster_cols = FALSE, 
+         color = colorRampPalette(c("blue", "white", "red"))(50))
+
+# Save the heatmap to a file
+ggsave("combined_heatmap_time_points_treatments_log2.png", width = 12, height = 10)
+
+
+```
+
+

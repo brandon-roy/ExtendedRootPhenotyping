@@ -1,0 +1,102 @@
+---
+title: "MultiRNAflow_RNAseq"
+author: "Brandon G Roy"
+date: "2024-06-04"
+output: html_document
+---
+
+```{r}
+# load relevant packages and libraries
+install.packages("pak")
+pak::pkg_install("r-lib/rlang")
+library(rlang)
+library(tidyr)
+library(BiocManager)
+library(MultiRNAflow)
+library(reshape2)
+library(ggplot2)
+library(ggrepel)
+library(FactoMineR)
+library(factoextra)
+library(plot3D)
+library(plot3Drgl)
+library(ggplotify)
+library(UpSetR)
+library(tidyverse)
+
+
+```
+
+```{r}
+# Assign files
+matrixFile <- "geneCount.txt"
+sampleFile <- "Sample_metadata2.txt"
+
+#Input file manipulation
+originalmatrixFile <- read.delim(matrixFile,header=FALSE,sep = " ")
+cleanedmatrixFile <- originalmatrixFile[!duplicated(originalmatrixFile$V1), ]
+cts <- data.frame(cleanedmatrixFile[,-1], row.names=cleanedmatrixFile[,1])
+
+coldata <- read.delim("Sample_metadata2.txt", sep='\t',row.names=1,header=TRUE )
+colnames(cts) <- rownames(coldata)
+
+cts2 <- cbind(Gene = rownames(cts), cts)
+
+colnames(originalmatrixFile) <- c("Gene",colnames(cts))
+
+coldata2 <- cbind(coldata$Treatment,coldata$Time,coldata$Replicate)
+colnames(coldata2) <- c("Group","Time","ID")
+coldata3 <- as.data.frame(coldata2)
+```
+
+```{r}
+data("RawCounts_Weger2021_MOUSEsub500")
+
+colnames(cts2)
+cts3 <- cts2
+rownames(cts3) <- NULL
+cts3
+```
+
+```{r}
+resSE_leaf <- DATAprepSE(RawCounts=cts3,
+                         Column.gene=1, Time.position = NULL, Individual.position = NULL, Group.position = NULL,
+                         colData = coldata3,
+                         )
+
+
+resSE_leaf <- DATAprepSE(RawCounts=RawCounts_Weger2021_MOUSEsub500,
+                         Column.gene=1,
+                         Group.position = 1,
+                         Time.position=2,
+                         Individual.position=3)
+
+
+
+RawCounts_Weger2021_MOUSEsub500
+data(RawCounts_Schleiss2021_CLLsub500)
+RawCounts_Schleiss2021_CLLsub500
+cts2
+cts3
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+

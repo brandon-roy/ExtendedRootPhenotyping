@@ -1,0 +1,1403 @@
+---
+title: "RNA-Seq Reanalyze"
+author: "Brandon G Roy"
+date: "2024-02-25"
+output: html_document
+---
+
+```{r}
+# load neccessary libraries
+library(BiocManager)
+library(DESeq2) # main RNA-Seq analysis pipeline
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(tidyr)
+library(dplyr)
+library(Rmisc)
+library(grid)
+library(gridExtra)
+library(lemon)
+library(purrr)
+
+```
+
+```{r}
+# import data
+
+# Assign files
+matrixFile <- "geneCount.txt"
+sampleFile <- "Sample_metadata.txt"
+
+#Input file manipulation
+originalmatrixFile <- read.delim(matrixFile,header=FALSE,sep = " ")
+cleanedmatrixFile <- originalmatrixFile[!duplicated(originalmatrixFile$V1), ]
+cts <- data.frame(cleanedmatrixFile[,-1], row.names=cleanedmatrixFile[,1])
+
+coldata <- read.delim("Sample_metadata.txt", sep='\t',row.names=1,header=TRUE )
+colnames(cts) <- rownames(coldata)
+
+#Test whether rownames of coldata match colnames of cts
+all(rownames(coldata) == colnames(cts)) #should return true
+
+# Adding a column 'group' to represent interaction of treatment*time:
+coldata$group <- factor(paste0(coldata$Treatment, coldata$Time))
+
+#Set up factor type for everything except time:
+coldata$Time <- as.factor(coldata$Time)
+coldata$Treatment <- as.factor(coldata$Treatment)
+coldata$Control <- as.factor(coldata$Control)
+coldata$F13Mut <- as.factor(coldata$F13Mut)
+coldata$F13 <- as.factor(coldata$F13)
+coldata$GHuMut <- as.factor(coldata$GHuMut)
+coldata$GHu <- as.factor(coldata$GHu)
+coldata$X12_day <- as.factor(coldata$X12_day)
+coldata$X7_day <- as.factor(coldata$X7_day)
+coldata$X4_day <- as.factor(coldata$X4_day)
+coldata$Symptoms <- as.factor(coldata$Symptoms)
+coldata$group <- as.factor(coldata$group)
+
+ggplot(data=cts, )
+barplot(colSums(cts[,1:75]))
+sum(colSums(cts[,1:75]))/75
+```
+
+
+```{r}
+# conduct differential expression analysis
+
+# Deseq2 model construction: (design = ~ Treatment + Time + Interaction)
+dds <- DESeqDataSetFromMatrix(countData = cts, colData = coldata, design = ~1 + group)
+keep <- rowSums(counts(dds)) >= 75
+dds <- dds[keep,]
+
+# Run DeSeq2
+dds_out <- DESeq(dds)
+print("Group comparison outputs of DESeq2 model:")
+print(resultsNames(dds_out))
+print("Dispersion Estimates of Counts")
+plotDispEsts(dds_out)
+
+# Transformation
+vsd <- vst(dds_out, nsub=500)
+vsd
+# plotDispEst(vsd)
+cts_vst <- assay(vsd)
+cts_vst <- as.data.frame(t(cts_vst))
+datExpr0 <- as.matrix(cts_vst)
+
+```
+
+
+```{r}
+# plotting co-ip genes
+# Genes specific to GHu
+#Niben101Scf03607g00009
+#Niben101Scf06128g00004
+#Niben101Scf01006g03016
+#Niben101Scf01814g05011
+#Niben101Scf04225g02007
+#Niben101Scf00593g01002
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf03607g00009", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+a <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Plastid transcriptionally active 14 SET domain protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf06128g00004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+b <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Splicing factor 3B subunit 1")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf01006g03016", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+c <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Dynamin-related protein 5A")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf01814g05011", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+d <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="WD40 domain-containing protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf04225g02007", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+e <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Translation initiation factor IF-2")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf00593g01002", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+f <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="P-type ATPase (PMA1)")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+
+
+grid.arrange(a,b,c,d,e,f)
+
+# Now all 1E pol pull-downs
+gene <- plotCounts(dds_out, gene = "Niben101Scf02622g10003", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+a <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Pyruvate kinase family protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf03607g00009", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+b <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="plastid transcriptionally active 14")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf03693g01008", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+c <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Succinate dehydrogenase flavoprotein subunit")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+#gene <- plotCounts(dds_out, gene = "Niben101Scf04328g00049", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+#d <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Photosystem II D2 protein")+
+#  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf06128g00004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+e <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Splicing factor 3B subunit 1 ")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+gene <- plotCounts(dds_out, gene = "Niben101Scf09512g04024", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+f <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="NAD(P)-binding Rossmann-fold superfamily protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+
+
+grid.arrange(a,b,c,e,f)
+
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf03607g00009", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+a <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Plastid transcriptionally active 14 SET domain protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf06128g00004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+b <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Splicing factor 3B subunit 1")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf01006g03016", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+c <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Dynamin-related protein 5A")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf01814g05011", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+d <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="WD40 domain-containing protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf04225g02007", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+e <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Translation initiation factor IF-2")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf00593g01002", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+f <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="P-type ATPase (PMA1)")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+
+grid.arrange(a,b,c,d,e,f)
+
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf02622g10003", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+a <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Pyruvate kinase family protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf03607g00009", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+b <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="plastid transcriptionally active 14")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf03693g01008", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+c <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Succinate dehydrogenase flavoprotein subunit")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+#gene <- plotCounts(dds_out_root, gene = "Niben101Scf04328g00049", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+#d <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Photosystem II D2 protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=0), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf06128g00004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+e <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="Splicing factor 3B subunit 1 ")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+gene <- plotCounts(dds_out_root, gene = "Niben101Scf09512g04024", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+f <- ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','red4','red'), title="NAD(P)-binding Rossmann-fold superfamily protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=10), legend.position = "none")
+
+grid.arrange(a,b,c,e,f)
+
+
+
+
+
+
+```
+
+
+```{r}
+
+```
+
+
+
+```{r}
+# extract out differentially abundant transcripts against mock control at each time point
+
+# GHu WT vs Control
+controlghu4 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt4", "Control4"),alpha=0.05))
+controlghu7 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt7", "Control7"),alpha=0.05))
+controlghu12 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt12", "Control12"),alpha=0.05))
+
+controlghuwt4 <- subset(controlghu4, padj<0.05 & abs(log2FoldChange)>1) # 2 DATs
+controlghuwt7 <- subset(controlghu7, padj<0.05 & abs(log2FoldChange)>1) # 2669 DATs
+controlghuwt12 <- subset(controlghu12, padj<0.05 & abs(log2FoldChange)>1) # 45 DATs
+
+#F13 WT vs Control
+f13wtvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_wt4","Control4"),alpha=0.05))
+f13wtvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "f13_wt7","Control7"),alpha=0.05))
+f13wtvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "f13_wt12","Control12"),alpha=0.05))
+
+controlf13wt4 <- subset(f13wtvscontrol4, padj<0.05 & abs(log2FoldChange)>1) # 391 DATs
+controlf13wt7 <- subset(f13wtvscontrol7, padj<0.05 & abs(log2FoldChange)>1) # 749 DATs
+controlf13wt12 <- subset(f13wtvscontrol12, padj<0.05 & abs(log2FoldChange)>1) # 267 DATs
+
+#GHu Mutant vs Control
+ghumuttvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut4","Control4"),alpha=0.05))
+ghumuttvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut7","Control7"),alpha=0.05))
+ghumuttvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut12","Control12"),alpha=0.05))
+
+controlghumut4 <- subset(ghumuttvscontrol4, padj<0.05 & abs(log2FoldChange)>1) # 163 DATs
+controlghumut7 <- subset(ghumuttvscontrol7, padj<0.05 & abs(log2FoldChange)>1) # 58 DATs
+controlghumut12 <- subset(ghumuttvscontrol12, padj<0.05 & abs(log2FoldChange)>1) # 74 DATs
+
+#F13 Mut vs Control
+f13mutvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_mut4","Control4"),alpha=0.05))
+f13mutvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "f13_mut7","Control7"),alpha=0.05))
+f13mutvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "f13_mut12","Control12"),alpha=0.05))
+
+controlf13mut4 <- subset(f13mutvscontrol4, padj<0.05 & abs(log2FoldChange)>1) # 1086 DATs
+controlf13mut7 <- subset(f13mutvscontrol7, padj<0.05 & abs(log2FoldChange)>1) # 352 DATs
+controlf13mut12 <- subset(f13mutvscontrol12, padj<0.05 & abs(log2FoldChange)>1) # 306 DATs
+
+```
+
+# Export diff exp transcripts
+```{r}
+# Supplementary File Creation for Proteomics
+library(xlsx)
+write.xlsx(controlghuwt4, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="g4", row.names=T)
+write.xlsx(controlghuwt7, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="g7", append=T, row.names=T)
+write.xlsx(controlghuwt12, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="g12", append=T, row.names=T)
+write.xlsx(controlf13wt4, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="f4", append=T, row.names=T)
+write.xlsx(controlf13wt7, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="f7", append=T, row.names=T)
+write.xlsx(controlf13wt12, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="f12", append=T, row.names=T)
+write.xlsx(controlghumut4, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="gm4", row.names=T)
+write.xlsx(controlghumut7, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="gm7", append=T, row.names=T)
+write.xlsx(controlghumut12, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="gm12", append=T, row.names=T)
+write.xlsx(controlf13mut4, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="fm4", append=T, row.names=T)
+write.xlsx(controlf13mut7, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="fm7", append=T, row.names=T)
+write.xlsx(controlf13mut12, file="SupplementaryFileXTranscriptomicsVsControl.xlsx", sheetName="fm12", append=T, row.names=T)
+
+
+```
+
+```{r}
+
+# Names of root genes differential abundant
+ghumutvsctrl04 <- data.frame(results(dds_out_root, contrast=c("group", "mutant_GHu4", "control4"),alpha=0.1), na.rm=T)
+ghumutvsctrl04_enrich <- noquote(rownames(subset(ghumutvsctrl04, pvalue<0.05 & abs(log2FoldChange)>1)))
+ghumutvsctrl17 <- data.frame(results(dds_out_root, contrast=c("group", "mutant_GHu17", "control17"),alpha=0.1), na.rm=T)
+ghumutvsctrl17_enrich <- noquote(rownames(subset(ghumutvsctrl17, pvalue<0.05 & log2FoldChange)>1))
+ghumutvsctrl26 <- data.frame(results(dds_out_root, contrast=c("group", "mutant_GHu26", "control26"),alpha=0.1), na.rm=T)
+ghumutvsctrl26_enrich <- noquote(rownames(subset(ghumutvsctrl26, pvalue<0.05 & abs(log2FoldChange)>1)))
+ghuwtvsctrl04 <- data.frame(results(dds_out_root, contrast=c("group", "wildtype_GHu4", "control4"),alpha=0.1), na.rm=T)
+ghuwtvsctrl04_enrich <- noquote(rownames(subset(ghuwtvsctrl04, pvalue<0.05 & abs(log2FoldChange)>1)))
+ghuwtvsctrl17 <- data.frame(results(dds_out_root, contrast=c("group", "wildtype_GHu17", "control17"),alpha=0.1), na.rm=T)
+ghuwtvsctrl17_enrich <- noquote(rownames(subset(ghuwtvsctrl17, pvalue<0.05 & abs(log2FoldChange)>1)))
+ghuwtvsctrl26 <- data.frame(results(dds_out_root, contrast=c("group", "wildtype_GHu26", "control26"),alpha=0.1), na.rm=T)
+ghuwtvsctrl26_enrich <- noquote(rownames(subset(ghuwtvsctrl26, pvalue<0.05 & abs(log2FoldChange)>1)))
+
+fourrootdpi <- list(GHuWT = ghuwtvsctrl04_enrich,GHuMut = ghumutvsctrl04_enrich)
+seventeendpi <- list(GHuWT = ghuwtvsctrl17_enrich,GHuMut = ghumutvsctrl17_enrich)
+twentysixdpi <- list(GHuWT = ghuwtvsctrl26_enrich,GHuMut = ghumutvsctrl26_enrich)
+
+ggvenn(fourrootdpi,fill_color = c("#710019","#C85250"), text_size = 12, show_percentage = F, set_name_color = "white")
+ggvenn(seventeendpi, fill_color = c("#710019","#C85250"), text_size = 12, show_percentage = F, set_name_color = "white")
+ggvenn(twentysixdpi,fill_color = c("#710019","#C85250"), text_size = 12, show_percentage = F, set_name_color = "white")
+
+
+```
+
+
+
+
+# Create Venn Diagrams
+```{r}
+# create venn diagrams of overlapping genes
+
+library(ggvenn)
+
+fourdpi <- list(F13WT = rownames(controlf13wt4),F13Mut = rownames(controlf13mut4),GHuWT = rownames(controlghuwt4),GHuMut = rownames(controlghumut4)
+)
+sevendpi <- list(F13WT = rownames(controlf13wt7),F13Mut = rownames(controlf13mut7),GHuWT = rownames(controlghuwt7),GHuMut = rownames(controlghumut7)
+)
+twlevedpi <- list(F13WT = rownames(controlf13wt12),F13Mut = rownames(controlf13mut12),GHuWT = rownames(controlghuwt12),GHuMut = rownames(controlghumut12)
+)
+
+ggvenn(fourdpi,fill_color = c("#055C9D","#0E86D4","#710019","#C85250"), text_size = 8, show_percentage = F, set_name_color = "white")
+ggvenn(sevendpi, fill_color = c("#055C9D","#0E86D4","#710019","#C85250"), text_size = 8, show_percentage = F, set_name_color = "white")
+ggvenn(twlevedpi,fill_color = c("#055C9D","#0E86D4","#710019","#C85250"), text_size = 8, show_percentage = F, set_name_color = "white")
+
+grid.arrange(venna, vennb,vennc, columns = 3)
+
+library(gplots)
+v.table<- venn(sevendpi)
+print(v.table)
+
+```
+
+### Gene set enrichment analysis of specific contrasts
+
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE)) 
+         install.packages("BiocManager")
+BiocManager::install("clusterProfiler")
+BiocManager::install("enrichplot")
+BiocManager::install("pathview")
+install.packages("data.table")
+
+library(BiocManager)
+library(clusterProfiler)
+library(enrichplot)
+library(data.table)
+library(xlsx)
+
+# read the data
+eggnog_data <- read.csv("out.emapper.annotations (3).csv", header = TRUE)
+#get columns 1 (query) and 9 (KO terms)
+kegg_data <- eggnog_data[c(1,4)]
+
+# clean up by removing the "ko:" in front of every KO term
+kegg_data$KEGG_ko <- gsub("ko:", "", as.character(kegg_data$KEGG_ko))
+
+# expand, since some genes/proteins will have multiple assigned KO terms
+kegg <- data.table(kegg_data)
+kegg <- kegg[, list(KEGG_ko = unlist(strsplit(KEGG_ko , ","))), by = query]
+
+# select the needed columns
+kegg_final <- kegg[,c(2,1)]
+kegg_final2 <- kegg[,c(1,2)]
+write.csv(kegg_final2, "kegg_Niben_annotation.csv", row.names = F)                         
+# finally you need a list of gene/protein names of interest (only the     # identifiers). Here, this is called protein_ids. It can be a vector or a # column in a data.frame. This can be a list of differentially expressed   # genes or the genes present in a cluster of module that is experimentall # interesting to you.
+
+```
+
+
+# KEGG and GSEA 
+
+```{r}
+library(clusterProfiler)
+library(gprofiler2)
+upload_GMT_file("output9999.gmt")
+#gp__CkPw_qBVv_TQo
+
+# create a contrast of f13 mutant vs control at 4 dpi and split into two - upregulated and downregulated
+
+f13mutvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_mut4","Control4"),alpha=0.05))
+fm4_upreg <- noquote(rownames(subset(f13mutvscontrol4, padj<0.05 & log2FoldChange>1))) #605
+fm4_downreg <- noquote(rownames(subset(f13mutvscontrol4, padj<0.05 & log2FoldChange<(-1)))) #481
+
+enr_res_fm4up <- enricher(fm4_upreg, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(enr_res_fm4up, showCategory=200, label_format=10, title="F13 Mutant vs Mock Control 4dpi upregulated")
+
+enr_res_fm4down <- enricher(fm4_downreg, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(enr_res_fm4down, showCategory=200, label_format=20, title="F13 Mutant vs Mock Control 4dpi downregulated")
+
+barplot(enr_res_fm4up, showCategory=200, label_format=10, title="GHu WT vs Mock Control 7dpi upregulated")
+enr_res_fm4up$ID
+barplot(enr_res_fm4down, showCategory=200, label_format=20, title="GHu WT vs Mock Control 7dpi downregulated")
+enr_res_fm4down$ID
+
+enr_res_fm4down@result
+
+
+fm4up_result <-  gost(fm4_upreg, organism = 'gp__CkPw_qBVv_TQo', significant = T) # returns nothing
+fm4down_result <- gost(fm4_downreg, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+GO_FM4_down <- data.frame("condition" = "F13 Mutant Downregulated vs Mock Control", "GOghu" = fm4down_result$result$term_id,
+"name" = fm4down_result$result$term_name, "ratio" = fm4down_result$result$term_size, "P.value" = fm4down_result$result$p_value)
+
+
+GO_FM4_down$name <- gsub("_", " ", GO_FM4_down$name)
+dataGO7.2 <- filter(dataGO7,ratio>500)
+p<- ggplot(data = GO_FM4_down, aes(x = "F13 Mutant Downregulated vs Mock Control", y = name, 
+                        color = P.value, size = ratio)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() + 
+  ylab("") + 
+  xlab("") + 
+  ggtitle("GO enrichment analysis")
+p
+ggsave("downregulated_F13Mutant4dpi.png", plot = p, width = 20, height = 10)
+
+
+
+
+f13wtvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_wt4","Control4"),alpha=0.05))
+fw4_upreg <- noquote(rownames(subset(f13wtvscontrol4, padj<0.05 & log2FoldChange>1))) #132
+fw4_downreg <- noquote(rownames(subset(f13wtvscontrol4, padj<0.05 & log2FoldChange<(-1)))) #259
+fw4up_result <-  gost(fw4_upreg, organism = 'gp__CkPw_qBVv_TQo', significant = T) # returns nothing
+fw4down_result <- gost(fw4_downreg, organism = 'gp__CkPw_qBVv_TQo', significant = T)
+
+GO_FW4_down <- data.frame("condition" = "Wildtype F13 Downregulated vs Mock Control", "GOghu" = fw4down_result$result$term_id,
+"name" = fw4down_result$result$term_name, "ratio" = fw4down_result$result$term_size, "P.value" = fw4down_result$result$p_value)
+
+
+ghumutvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut4","Control4"),alpha=0.05))
+gm4_upreg <- noquote(rownames(subset(ghumutvscontrol4, padj<0.05 & log2FoldChange>1)))
+gm4_downreg <- noquote(rownames(subset(ghumutvscontrol4, padj<0.05 & log2FoldChange<(-1))))
+gm4up_result <-  gost(gm4_upreg, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+gm4down_result <- gost(gm4_downreg, organism = 'gp__CkPw_qBVv_TQo', significant = T)
+
+GO_GM4_UP <- data.frame("condition" = "GHu Mutant Upregulated vs Mock Control", "GOghu" = gm4up_result$result$term_id,
+"name" = gm4up_result$result$term_name, "ratio" = gm4up_result$result$term_size, "P.value" = gm4up_result$result$p_value)
+GO_GM4_down <- data.frame("condition" = "GHu Mutant Downregulated vs Mock Control", "GOghu" = gm4down_result$result$term_id,
+"name" = gm4down_result$result$term_name, "ratio" = gm4down_result$result$term_size, "P.value" = gm4down_result$result$p_value)
+
+
+```
+
+
+
+
+```{r}
+# create two lists of control vs ghu wt at 7 dpi - upregulated and downregulated
+
+# extract GHu WT vs Control from DESeq2
+ghuwtvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt4","Control4"),alpha=0.05))
+ghuwtvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt7","Control7"),alpha=0.05))
+ghuwtvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt12","Control12"),alpha=0.05))
+
+ghuwtvsmut7_enrich <- noquote(rownames(subset(ghuwtvsmut7, padj<0.05 & abs(log2FoldChange)>1)))
+
+gw7_upreg <- noquote(rownames(subset(ghuwtvscontrol7, padj<0.05 & log2FoldChange>1)))
+gw7_downreg <- noquote(rownames(subset(ghuwtvscontrol7, padj<0.05 & log2FoldChange<(-1))))
+
+enr_res_gw7up <- enricher(gw7_upreg, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(enr_res_gw7up, showCategory=200, label_format=10, title="GHu WT vs Mock Control 7dpi upregulated")
+
+enr_res_gw7down <- enricher(gw7_downreg, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(enr_res_gw7down, showCategory=200, label_format=20, title="GHu WT vs Mock Control 7dpi downregulated")
+
+barplot(enr_res_gw7up, showCategory=200, label_format=10, title="GHu WT vs Mock Control 7dpi upregulated")
+enr_res_gw7up$ID
+barplot(enr_res_gw7down, showCategory=200, label_format=20, title="GHu WT vs Mock Control 7dpi downregulated")
+enr_res_gw7down$ID
+
+
+
+
+
+```
+
+
+### Gene name searches for specific enzymes and pathways
+
+```{r}
+# import information from GFF file
+
+read_mRNA_gff_with_GO <- function(gff_path) {
+  # Read the file
+  lines <- readLines(gff_path)
+  
+  # Initialize an empty data frame to store the results
+  result_df <- data.frame(GeneID = character(), Note = character(), GO_Terms = character(), stringsAsFactors = FALSE)
+  
+  # Loop through each line of the file
+  for (line in lines) {
+    if (grepl("\\tmRNA\\t", line)) { # Check if the line is an mRNA record
+      # Extract the ID, Note, and Ontology_term using regular expressions
+      id <- regmatches(line, regexpr("ID=[^;]+", line))
+      id <- sub("ID=", "", id)
+      
+      note <- regmatches(line, regexpr("Note=\"[^\"]+", line))
+      note <- ifelse(length(note) > 0, sub("Note=\"", "", note), NA)
+      
+      ontology_term <- regmatches(line, regexpr("Ontology_term=[^;]+", line))
+      ontology_term <- ifelse(length(ontology_term) > 0, sub("Ontology_term=", "", ontology_term), NA)
+      
+      # Append the extracted information to the result dataframe
+      result_df <- rbind(result_df, data.frame(GeneID = id, Note = note, GO_Terms = ontology_term, stringsAsFactors = FALSE))
+    }
+  }
+  
+  # Split the GO_Terms column into multiple columns if there are multiple GO terms
+  go_terms_split <- strsplit(as.character(result_df$GO_Terms), ",")
+  max_terms <- max(sapply(go_terms_split, length), na.rm = TRUE)
+  
+  go_df <- do.call(rbind, lapply(go_terms_split, function(x) {
+    length(x) <- max_terms
+    return(as.data.frame(t(x)))
+  }))
+  
+  colnames(go_df) <- paste0("GO_Term_", seq_len(max_terms))
+  result_df <- cbind(result_df, go_df)
+  result_df$GO_Terms <- NULL # Remove the original GO_Terms column
+  
+  return(result_df)
+}
+
+# Example usage
+gff_path <- "Niben101_annotation.gene_models.gff"
+annotation <- read_mRNA_gff_with_GO(gff_path)
+print(annotation)
+
+#write_csv(annotation, "GeneID_Name_GeneOntology.csv")
+```
+
+
+```{r}
+annotation2 <- read_csv("GeneID_Name_GeneOntology.csv")
+annotation2$GeneID <- sub("\\.1$", "", annotation2$GeneID)
+
+# Function to search Notes, filter by dds_out presence, and plot counts for matched Gene IDs
+searchNotesAndPlotFiltered <- function(annotation, search_term, dds_out) {
+  # Search for the term in the 'Note' column and extract corresponding Gene IDs and Notes
+  matched <- annotation[grepl(search_term, annotation$Note, ignore.case = TRUE), ]
+  
+  # Filter matched Gene IDs to keep only those present in dds_out
+  dds_gene_ids <- rownames(dds_out)
+  matched <- matched[matched$GeneID %in% dds_gene_ids, ]
+  
+  # Ensure matched is not empty after filtering
+  if (nrow(matched) == 0) {
+    stop("No matches found for the search term in the 'Note' column within the dds_out dataset.")
+  }
+  
+  # Initialize an empty list to store plot objects
+  plots_list <- list()
+  
+  # For each matched GeneID, create a plot
+  for (i in 1:nrow(matched)) {
+    gene_id <- matched$GeneID[i]
+    note <- matched$Note[i]
+    
+    # Use plotCounts to extract normalized count data for the gene ID
+    count_data <- plotCounts(dds_out, gene=gene_id, intgroup=c('Time', 'Treatment'), normalized=TRUE, returnData=TRUE)
+    
+    # Plot the count data using ggboxplot
+    p <- ggboxplot(count_data, x="Time", y="count", fill="Treatment", 
+                   palette=c('gray', 'lightblue', 'blue', 'red', 'red4'), 
+                   title=note, subtitle = gene_id) + 
+         theme(axis.text.x = element_text(angle=0, vjust=1, hjust=0.5, size=20))
+    
+    # Store the plot in the list
+    plots_list[[gene_id]] <- p
+  }
+  
+  # Return the list of plots
+  return(plots_list)
+}
+
+# Function to search Notes, filter by dds_out presence, and plot counts for matched Gene IDs
+searchNotesAndPlotFiltered2 <- function(annotation, search_term, dds_out) {
+  # Search for the term in the 'Note' column and extract corresponding Gene IDs and Notes
+  matched <- annotation[grepl(search_term, annotation$Note, ignore.case = TRUE), ]
+  
+  # Filter matched Gene IDs to keep only those present in dds_out
+  dds_gene_ids <- rownames(dds_out)
+  matched <- matched[matched$GeneID %in% dds_gene_ids, ]
+  
+  # Ensure matched is not empty after filtering
+  if (nrow(matched) == 0) {
+    stop("No matches found for the search term in the 'Note' column within the dds_out dataset.")
+  }
+  
+  # Initialize an empty list to store plot objects
+  plots_list <- list()
+  
+  # For each matched GeneID, create a plot
+  for (i in 1:nrow(matched)) {
+    gene_id <- matched$GeneID[i]
+    note <- matched$Note[i]
+    
+    # Use plotCounts to extract normalized count data for the gene ID
+    count_data <- plotCounts(dds_out, gene=gene_id, intgroup=c('Time', 'Treatment'),  normalized=TRUE, returnData=TRUE)
+    
+    # Plot the count data using ggboxplot
+    p <- ggboxplot(count_data, x="Time", y="count", fill="Treatment",
+                   palette=c('gray', 'red', 'red4'), 
+                   title=note,
+                   subtitle = gene_id) + 
+         theme(axis.text.x = element_text(angle=0, vjust=1, hjust=0.5, size=20))
+    
+    # Store the plot in the list
+    plots_list[[gene_id]] <- p
+  }
+  
+  # Return the list of plots
+  return(plots_list)
+}
+
+searchNotesAndPlotFiltered3 <- function(annotation, search_term, dds_out) {
+  # Search for the term in the 'Note' column and extract corresponding Gene IDs and Notes
+  matched <- annotation[grepl(search_term, annotation$Note, ignore.case = TRUE), ]
+  
+  # Filter matched Gene IDs to keep only those present in dds_out
+  dds_gene_ids <- rownames(dds_out)
+  matched <- matched[matched$GeneID %in% dds_gene_ids, ]
+  
+  # Ensure matched is not empty after filtering
+  if (nrow(matched) == 0) {
+    stop("No matches found for the search term in the 'Note' column within the dds_out dataset.")
+  }
+  
+  # Initialize a dataframe to store cumulative count data
+  cumulative_data <- data.frame(Time = character(), Treatment = character(), count = numeric())
+  
+  # For each matched GeneID, aggregate count data
+  for (gene_id in matched$GeneID) {
+    # Use plotCounts to extract normalized count data for the gene ID
+    count_data <- plotCounts(dds_out, gene=gene_id, intgroup=c('Time', 'Treatment'), normalized=TRUE, returnData=TRUE)
+    
+    # Sum up the counts across genes
+    if (nrow(cumulative_data) == 0) {
+      cumulative_data <- count_data
+    } else {
+      # Ensure alignment of levels in factor columns (Time, Treatment) between cumulative_data and count_data
+      cumulative_data$Time <- factor(cumulative_data$Time, levels = unique(c(count_data$Time, cumulative_data$Time)))
+      cumulative_data$Treatment <- factor(cumulative_data$Treatment, levels = unique(c(count_data$Treatment, cumulative_data$Treatment)))
+      count_data$Time <- factor(count_data$Time, levels = levels(cumulative_data$Time))
+      count_data$Treatment <- factor(count_data$Treatment, levels = levels(cumulative_data$Treatment))
+      
+      # Combine and sum the counts for matching Time and Treatment
+      cumulative_data <- rbind(cumulative_data, count_data)
+      cumulative_data <- aggregate(count ~ Time + Treatment, cumulative_data, sum)
+    }
+  }
+  
+  # Explicitly set the order of the Time and Treatment variables
+  cumulative_data$Time <- factor(cumulative_data$Time, levels = c("4", "7", "12"))
+  cumulative_data$Treatment <- factor(cumulative_data$Treatment, levels = c("Control", "f13_mut", "f13_wt", "ghu_mut", "ghu_wt"))
+  
+  # Plot the cumulative count data using a bar plot
+  p <- ggplot(cumulative_data, aes(x=Time, y=count, fill=Treatment)) +
+       geom_col(position="dodge") +
+       scale_fill_manual(values=c('gray', 'lightblue', 'blue', 'red', 'red4')) + # Assign colors as needed
+       labs(title=paste("Cumulative Counts for", search_term), x="Time", y="Cumulative Count") +
+       theme(axis.text.x = element_text(angle=0, vjust=1, hjust=0.5, size=20), panel.background = element_rect(fill='white'))
+  
+  # Return the plot
+  return(p)
+}
+
+
+
+
+
+trif <- "translation initiation factor IF"
+a_p <- searchNotesAndPlotFiltered(annotation2, trif, dds_out)
+print(a_p)
+trif <- "polyadenylate-"
+a_p <- searchNotesAndPlotFiltered(annotation2, trif, dds_out)
+print(a_p)
+
+suc <- "succinate de"
+suc_p <- searchNotesAndPlotFiltered3(annotation2, suc, dds_out)
+print(suc_p)
+
+suc <- "leucine-rich repeat receptor"
+suc_p <- searchNotesAndPlotFiltered3(annotation2, suc, dds_out)
+print(suc_p)
+
+```
+
+```{r}
+CML <- "CML"
+CML_plots <- searchNotesAndPlotFiltered(annotation2, CML, dds_out)
+print(CML_plots)
+
+ef1a <- "Elongation factor 1-alpha"
+ef1a_plots <- searchNotesAndPlotFiltered(annotation2, ef1a, dds_out)
+print(ef1a_plots)
+
+ala <- "alanine aminotransferase"
+ala_plots <- searchNotesAndPlotFiltered(annotation2, ala, dds_out)
+print(ala_plots)
+
+ofu <- "O-fucosyltransferase family protein"
+ofu_plots <- searchNotesAndPlotFiltered(annotation2, ofu, dds_out)
+print(ofu_plots)
+
+endo <- "endoplasmic"
+end_plots <- searchNotesAndPlotFiltered(annotation2, endo, dds_out)
+print(end_plots)
+
+#The most ER-proximal regulators of the UPR consist of a set of transmembrane ER-resident proteins, including inositol-requiring protein 1 (IRE1), PKR-like endoplasmic reticulum kinase (PERK), and activating transcription factor (ATF)-6. (Lin et al. 2008)
+
+# perk is not present
+ATF <- "ATF"
+atf_p <- searchNotesAndPlotFiltered(annotation2, ATF, dds_out)
+print(atf_p)
+
+auto <- "autophagy"
+auto_p <- searchNotesAndPlotFiltered3(annotation2, auto, dds_out)
+print(auto_p)
+
+golgi <- "golgi"
+golgi_p <- searchNotesAndPlotFiltered(annotation2, golgi, dds_out)
+print(golgi_p)
+
+myo <- "myosin"
+myo_p <- searchNotesAndPlotFiltered(annotation2, myo, dds_out)
+print(myo_p)
+
+succ <- "succinate de"
+succ_p <-  searchNotesAndPlotFiltered(annotation2, succ, dds_out)
+print(succ_p)
+
+succ <- "succinate de"
+succ_p <-  searchNotesAndPlotFiltered2(annotation2, succ, dds_out)
+print(succ_p)
+
+# ghu strains are able to suppress AGO2 expression better at the middle of infection while f13 strains are not good at suppressing
+
+
+```
+
+# Printing out silencing genes involved in viral RNA silencing
+```{r}
+argon <- "argonaute"
+argon_p <-  searchNotesAndPlotFiltered2(annotation2, argon, dds_out_root)
+dicer <- "dicer"
+dicer_p <-  searchNotesAndPlotFiltered2(annotation2, dicer, dds_out_root)
+argon <- "suppressor of gene"
+sup_p <-  searchNotesAndPlotFiltered2(annotation2, argon, dds_out_root)
+argon <- "double-stranded"
+drbp_p <-  searchNotesAndPlotFiltered2(annotation2, argon, dds_out_root)
+argon <- "silencing"
+sil_p <-  searchNotesAndPlotFiltered2(annotation2, argon, dds_out_root)
+argon <- "RNA-dependent RNA polymerase"
+rdr_p <-  searchNotesAndPlotFiltered2(annotation2, argon, dds_out_root)
+combined_silencing_genes_root <- c(argon_p, dicer_p, sup_p, drbp_p, sil_p, rdr_p)
+
+argon <- "argonaute"
+argon_p <-  searchNotesAndPlotFiltered(annotation2, argon, dds_out)
+dicer <- "dicer"
+dicer_p <-  searchNotesAndPlotFiltered(annotation2, dicer, dds_out)
+argon <- "suppressor of gene"
+sup_p <-  searchNotesAndPlotFiltered(annotation2, argon, dds_out)
+argon <- "double-stranded"
+drbp_p <-  searchNotesAndPlotFiltered(annotation2, argon, dds_out)
+argon <- "silencing"
+sil_p <-  searchNotesAndPlotFiltered(annotation2, argon, dds_out)
+argon <- "RNA-dependent RNA polymerase"
+rdr_p <-  searchNotesAndPlotFiltered(annotation2, argon, dds_out)
+
+combined_silencing_genes <- c(argon_p, dicer_p, sup_p, drbp_p, sil_p, rdr_p)
+
+# Save silencing genes to a PDF
+pdf_file_path <- "silencing_root_genes.pdf"
+pdf(pdf_file_path)
+for (plot_id in names(combined_silencing_genes_root)) {
+  print(combined_silencing_genes_root[[plot_id]])
+}
+dev.off()
+
+pdf_file_path <- "silencing_leaf_genes.pdf"
+pdf(pdf_file_path)
+for (plot_id in names(combined_silencing_genes)) {
+  print(combined_silencing_genes[[plot_id]])
+}
+dev.off()
+
+
+argon <- "argonaute"
+argon_p <-  searchNotesAndPlotFiltered3(annotation2, argon, dds_out)
+dicer <- "dicer"
+dicer_p <-  searchNotesAndPlotFiltered3(annotation2, dicer, dds_out)
+argon <- "suppressor of gene"
+sup_p <-  searchNotesAndPlotFiltered3(annotation2, argon, dds_out)
+argon <- "double-stranded"
+drbp_p <-  searchNotesAndPlotFiltered3(annotation2, argon, dds_out)
+argon <- "silencing"
+sil_p <-  searchNotesAndPlotFiltered3(annotation2, argon, dds_out)
+argon <- "RNA-dependent RNA polymerase"
+rdr_p <-  searchNotesAndPlotFiltered3(annotation2, argon, dds_out)
+
+print(argon_p)
+print(dicer_p)
+print(sup_p)
+print(drbp_p)
+print(sil_p)
+print(rdr_p)
+
+```
+
+```{r}
+inos <- "Inositol monophosphatase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Inositol-phosphate phosphatase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Inositol-1-monophosphatase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Inositol-3-phosphate synthase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "phosphatidylinositol synthase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Phosphatidylinositol 3-kinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+
+inos <- "Phosphatidylinositol 4-kinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Phosphatidylinositol 3- and 4-kinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "phosphatidylinositol kinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Phosphatidylinositol 4-phosphate 5-kinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "phosphatidylinositol-4-phosphate 5-kinase family protein"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Type I inositol 1,4,5-trisphosphate 5-phosphatase 1"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Phosphatidylinositol 3,4,5-trisphosphate 5-phosphatase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Inositol-pentakisphosphate 2-kinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+
+
+
+
+
+
+
+
+
+
+
+#heavily downregulated for ghu wt later, but F13 mutant is earlier
+inos <- "Inositol-3-phosphate synthase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "phosphatidylinositol 3-"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "phosphatidylinositol 4-"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "phosphatidylinositol phosphate kinase 5"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+inos <- "superoxide"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+inos <- "60S acidic ribosomal protein P0"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+inos <- "Serine/threonine-protein kinase TOR"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "Regulatory-associated protein of TOR"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+
+inos <- "phosphatidic acid phosphohydrolase 2"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+inos <- "Inositol-pentakisphosphate"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+inos <- "Inositol polyphosphate multikinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "Inositol-3-phosphate synthase"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Phosphatidylinositol:ceramide inositolphosphotransferase"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Phosphatidylinositol Synthase"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "WD repeat domain phosphoinositide-interacting protein"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "phosphatidic acid phosphohydrolase"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- " TOR "
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "SAC1"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "acetyl-CoA carboxylase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "COPII"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "myosin XI"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "cdp-diacylglycerol"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Phosphatidylinositol-glycan biosynthesis"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Sec14p-like phosphatidylinositol transfer family protein"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+
+
+Type I inositol 1,4,5-trisphosphate 5-phosphatase 
+```
+
+```{r}
+# PIP4 5-kinase has lower counts, probably not a major factor or target
+inos <- "Phosphatidylinositol 4-phosphate 5-"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "phosphatidylinositol-4-phosphate 5"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+
+
+inos <- "5-trisphosphate"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+inos <- "Inositol hexakisphosphate and diphosphoinositol-pentakisphosphate kinase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "phosphoinositide"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out_root)
+print(inos_p)
+
+
+
+inos <- "sec14p"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "sfh5"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out)
+print(inos_p)
+ptd <- "inositol transporter"
+ptd_p <- searchNotesAndPlotFiltered(annotation2, ptd, dds_out)
+print(ptd_p)
+
+ptd <- "phosphatidylinositol"
+ptd_p <- searchNotesAndPlotFiltered(annotation2, ptd, dds_out)
+print(ptd_p)
+diacyl <- "diacylglycerol"
+diacyl_p <-  searchNotesAndPlotFiltered(annotation2, diacyl, dds_out)
+print(diacyl_p)
+plc <- "phospholipase"
+plc_p <- searchNotesAndPlotFiltered(annotation2, plc, dds_out)
+print(plc_p)
+ip5 <- "5-phosphatase"
+ip5_p <- searchNotesAndPlotFiltered(annotation2, ip5, dds_out)
+print(ip5_p)
+aba <- "phosphatase C"
+aba_p <- searchNotesAndPlotFiltered3(annotation2, aba, dds_out)
+print(aba_p)
+
+aba <- "hexakis"
+aba_p <- searchNotesAndPlotFiltered(annotation2, aba, dds_out)
+print(aba_p)
+
+dk <- "diacylglycerol kinase"
+dk_p <- searchNotesAndPlotFiltered3(annotation2, dk, dds_out)
+print(dk_p)
+
+abc <- "multidrug resistance"
+abc_p <- searchNotesAndPlotFiltered(annotation2, abc, dds_out)
+print(abc_p)
+abc <- "spx"
+abc_p <- searchNotesAndPlotFiltered(annotation2, abc, dds_out)
+print(abc_p)
+
+
+abc <- "protein phosphatase 2C"
+abc_p <- searchNotesAndPlotFiltered3(annotation2, abc, dds_out)
+print(abc_p)
+
+
+```
+
+```{r}
+
+# endoplasmic reticulum
+
+endopl <- "ganglioside"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+endopl <- "protein disulfide"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+
+endopl <- "hsp"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+
+#hsp70 and hsp20 are heavily upregulated
+
+endopl <- "hsc"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+endopl <- "derlin"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+endopl <- "dnaj"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+
+
+
+
+endopl <- "protein disulfide"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+endopl <- "protein disulfide"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+
+```
+
+```{r}
+
+
+
+endopl <- "endoplasm"
+end_p <- searchNotesAndPlotFiltered(annotation2, endopl, dds_out)
+print(end_p)
+
+hsp <- "hsp"
+hsp_p <- searchNotesAndPlotFiltered(annotation2, hsp, dds_out)
+print(hsp_p)
+
+# no results for PERK
+perk <- "protein kinase r"
+perk_p <- searchNotesAndPlotFiltered(annotation2, perk, dds_out)
+print(perk_p)
+
+#retinoblastoma
+reti <- "retinoblastoma"
+reti_p <- searchNotesAndPlotFiltered(annotation2, reti, dds_out)
+print(reti_p)
+
+# repressor of silencing
+reps <- "repressor of silencing"
+reps_p <- searchNotesAndPlotFiltered3(annotation2, reps, dds_out)
+print(reps_p)
+
+
+
+# gluconogenesis is significantly decreased in ghu wt by looking at F-1,6-BP
+
+beclin <- "beclin"
+bec_p <- searchNotesAndPlotFiltered(annotation2, beclin, dds_out)
+print(bec_p)
+
+eth <- "ethanolamine"
+eth_p <- searchNotesAndPlotFiltered(annotation2, eth, dds_out)
+print(eth_p)
+
+poty <- "potyvir"
+pot_p <- searchNotesAndPlotFiltered(annotation2, poty, dds_out)
+print(pot_p)
+
+fib <- "fibrillin"
+fib_p <- searchNotesAndPlotFiltered(annotation2, fib, dds_out)
+print(fib_p)
+
+##### Fibrillin is majorly repressed for wildtype GHu infected plants
+
+tp53 <- "p53"
+tp_p <- searchNotesAndPlotFiltered(annotation2, tp53, dds_out)
+print(tp_p)
+
+
+vit <- "vitis"
+vit_p <- searchNotesAndPlotFiltered(annotation2, vit, dds_out)
+print(vit_p)
+
+
+venom <- "venom"
+venom_p <- searchNotesAndPlotFiltered(annotation2, venom, dds_out)
+print(venom_p)
+
+chitinase <- "chitinase"
+chit_p <- searchNotesAndPlotFiltered(annotation2, chitinase, dds_out)
+print(chit_p)
+
+# WOW
+
+def <- "defensin"
+def_p <- searchNotesAndPlotFiltered(annotation2, def, dds_out)
+print(def_p)
+
+pro <- "Proteinase inhibitor"
+pro_p <- searchNotesAndPlotFiltered(annotation2, pro, dds_out)
+print(pro_p)
+
+lip <- "lipoxygenase"
+lip_p <- searchNotesAndPlotFiltered(annotation2, lip, dds_out)
+print(lip_p)
+
+callose <- "callose synthase"
+cal_p <- searchNotesAndPlotFiltered3(annotation2, callose, dds_out)
+print(cal_p)
+
+
+```
+
+# plant hormone pathways
+```{r}
+
+iaa <- "iaa"
+i_p <- searchNotesAndPlotFiltered(annotation2, iaa, dds_out)
+print(i_p)
+
+
+```
+# ROS production
+```{r}
+
+ox <- "burst"
+o_p <- searchNotesAndPlotFiltered(annotation2, ox, dds_out)
+print(o_p)
+
+
+```
+
+
+
+
+
+
+
+```{r}
+inos <- "Inositol-3-phosphate synthase"
+inos_p <-  searchNotesAndPlotFiltered(annotation2, inos, dds_out_root)
+print(inos_p)
+
+inos <- "sec14"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+inos <- "glucan synthase"
+inos_p <-  searchNotesAndPlotFiltered3(annotation2, inos, dds_out)
+print(inos_p)
+
+
+
+
+
+nadph <- plotCounts(dds_out, gene = "Niben101Scf09512g04024", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(nadph, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="")+ theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+kinase <- plotCounts(dds_out, gene = "Niben101Scf02622g10003", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(kinase, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="")+ theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+plastid <- plotCounts(dds_out, gene = "Niben101Scf06128g00004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(plastid, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="")+ theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+cal <- plotCounts(dds_out, gene = "Niben101Scf01552g02007", intgroup=c('Time','Treatment'), normalized = T, returnData = T, title = "x")
+ggboxplot(cal, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Calcineurin B-like interacting protein kinase 24")+ theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+kin <- plotCounts(dds_out, gene = "Niben101Scf01635g05004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(kin, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Receptor-like protein kinase 2")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+heat <- plotCounts(dds_out, gene = "Niben101Scf01639g04001", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(heat, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Heat stress transcription factor A-6b")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+Uri <- plotCounts(dds_out, gene = "Niben101Scf03374g07003", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(Uri, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Bifunctional uridylyltransferase/uridylyl-removing enzyme")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+hydr <- plotCounts(dds_out, gene = "Niben101Scf03790g00015", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(hydr, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="hydroxycinnamoyl-CoA shikimate/quinate hydroxycinnamoyl transferase")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+hsp <- plotCounts(dds_out, gene = "Niben101Scf04040g08010", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(hsp, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="17.3 kDa class II heat shock protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+unk <- plotCounts(dds_out, gene = "Niben101Scf05848g04019", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(unk, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Unknown protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+unk2 <- plotCounts(dds_out, gene = "Niben101Scf06364g00002", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(unk2, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Unknown protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+YQGE <- plotCounts(dds_out, gene = "Niben101Scf08002g01012", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(YQGE, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="UPF0301 protein YqgE")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+metal <- plotCounts(dds_out, gene = "Niben101Scf08149g03006", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(metal, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Heavy metal transport/detoxification superfamily protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20)) 
+cinn <- plotCounts(dds_out, gene = "Niben101Scf08196g01007", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(cinn, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="cinnamate-4-hydroxylase")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+tyrp <- plotCounts(dds_out, gene = "Niben101Scf08855g00008", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(tyrp, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="kunitz trypsin inhibitor 1")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+phen <- plotCounts(dds_out, gene = "Niben101Scf12881g00010", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(phen, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="phenylalanine ammonia-lyase 2")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+.1 sp|Q9ZUH5|SDR2B_ARATH *-** Short-chain dehydrogenase/reductase 2b IPR002347 (Glucose/ribitol dehydrogenase) GO:0008152 (metabolic process), GO:0016491 (oxidoreductase activity)
+.1 AT2G15020.1 ***- unknown protein; BEST Arabidopsis thaliana protein match is: unknown protein . LENGTH=526
+.1 sp|P27061|PPA1_SOLLC **** Acid phosphatase 1 IPR005519 (Acid phosphatase (Class B)), IPR023214 (HAD-like domain) GO:0003993 (acid phosphatase activity)
+.1 sp|Q8WXF0|SRS12_HUMAN *-*- Serine/arginine-rich splicing factor 12 IPR012677 (Nucleotide-binding alpha-beta plait domain) GO:0000166 (nucleotide binding), GO:0003676 (nucleic acid binding)
+.1 sp|P25792|CYSP_SCHMA **** Cathepsin B-like cysteine proteinase IPR000118 (Granulin), IPR013128 (Peptidase C1A), IPR025660 (Cysteine peptidase, histidine active site), IPR025661 (Cysteine peptidase, asparagine active site) GO:0006508 (proteolysis), GO:0008234 (cysteine-type peptidase activity)
+.1 AT4G12770.1 *-*- Chaperone DnaJ-domain superfamily protein LENGTH=891 IPR001623 (DnaJ domain)
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf00595g02005", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Short-chain dehydrogenase/reductase 2b")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf01341g03006", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="unknown protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf01374g15012", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Acid phosphatase 1")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf02373g04023", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Serine/arginine-rich splicing factor 12")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf04007g01012", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Cathepsin B-like cysteine proteinase")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf07008g03009", intgroup=c('Time','Treatment'), normalized =T, returnData = T)
+ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Chaperone DnaJ-domain superfamily protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+
+
+gene <- plotCounts(dds_out, gene = "Niben101Scf07933g01011", intgroup=c('Time','Treatment'), normalized =T, returnData = T)
+ggboxplot(gene, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="Chaperone DnaJ-domain superfamily protein")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+```
+
+
+
+
+
+
+```{r}
+
+# The snoRNA manipulation hypothesis
+# Nucleolar protein 56
+n56 <- plotCounts(dds_out, gene = "Niben101Ctg14464g00004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+n56 <- plotCounts(dds_out, gene = "Niben101Scf04815g01011", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(n56, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+n56_2 <- plotCounts(dds_out, gene = "Niben101Scf07899g00005", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(n56_2, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+n56_3 <- plotCounts(dds_out, gene = "Niben101Scf08338g00003", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(n56_3, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+# Nucleolar protein 58
+n58 <- plotCounts(dds_out, gene = "Niben101Scf33515g00005", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(n58, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+n58_2 <- plotCounts(dds_out, gene = "Niben101Scf06664g00003", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(n58_2, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+
+
+
+
+
+
+# ADP-ribose polymerases ( these are involved in a number of stress responses with cajal bodies)
+
+a <- plotCounts(dds_out, gene = "Niben101Scf08643g04007", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+a <- plotCounts(dds_out, gene = "Niben101Scf09628g02004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+a <- plotCounts(dds_out, gene = "Niben101Scf12410g00018", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+#a <- plotCounts(dds_out, gene = "Niben101Scf14361g00015", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+#ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+#  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+#a <- plotCounts(dds_out, gene = "Niben101Scf00085g01014", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+#ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+#  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+a <- plotCounts(dds_out, gene = "Niben101Scf01388g00004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+a <- plotCounts(dds_out, gene = "Niben101Scf01764g02004", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+a <- plotCounts(dds_out, gene = "Niben101Scf01822g09002", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="polymerase 15")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+
+
+
+a <- plotCounts(dds_out, gene = "Niben101Scf01879g01008", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+
+
+a <- plotCounts(dds_out, gene = "Niben101Scf04802g01014", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+a <- plotCounts(dds_out, gene = "Niben101Scf04939g02015", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+a <- plotCounts(dds_out, gene = "Niben101Ctg12852g00001", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+a <- plotCounts(dds_out, gene = "Niben101Ctg12852g00001", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))ggboxplot(a, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+ <- plotCounts(dds_out, gene = "", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+ <- plotCounts(dds_out, gene = "", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+ <- plotCounts(dds_out, gene = "", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+ <- plotCounts(dds_out, gene = "", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+t <- plotCounts(dds_out, gene = "Niben101Scf01301g04001", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(t, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+t <- plotCounts(dds_out, gene = "Niben101Scf00481g01003", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(t, x="Time", y="count", fill="Treatment", palette = c('limegreen','blue','lightblue','red','magenta'), title="")+
+  theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+
+
+
+```

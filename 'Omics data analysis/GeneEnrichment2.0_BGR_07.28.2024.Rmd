@@ -1,0 +1,665 @@
+---
+---
+```{r}
+# load neccessary libraries
+library(BiocManager)
+library(DESeq2) # main RNA-Seq analysis pipeline
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(tidyr)
+library(dplyr)
+library(Rmisc)
+library(grid)
+library(gridExtra)
+library(lemon)
+library(purrr)
+library(BiocManager)
+library(clusterProfiler)
+#library(enrichplot)
+library(data.table)
+library(xlsx)
+library(gprofiler2)
+library(reshape)
+
+
+# Function to get sorted list of upregulated and downregulated genes
+get_sorted_genes <- function(dds, contrast) {
+  results_df <- data.frame(results(dds, contrast=contrast, alpha=0.05))
+  
+  # Upregulated genes: padj < 0.05 & log2FoldChange > 1
+  upregulated_genes <- subset(results_df, padj < 0.05 & log2FoldChange > 1)
+  upregulated_genes_sorted <- upregulated_genes[order(upregulated_genes$padj), ]
+  
+  # Downregulated genes: padj < 0.05 & log2FoldChange < -1
+  downregulated_genes <- subset(results_df, padj < 0.05 & log2FoldChange < -1)
+  downregulated_genes_sorted <- downregulated_genes[order(downregulated_genes$padj), ]
+  
+  return(list(upregulated = upregulated_genes_sorted, downregulated = downregulated_genes_sorted))
+}
+
+```
+
+```{r}
+# import data
+
+# Assign files
+matrixFile <- "geneCount.txt"
+sampleFile <- "Sample_metadata.txt"
+
+#Input file manipulation
+originalmatrixFile <- read.delim(matrixFile,header=FALSE,sep = " ")
+cleanedmatrixFile <- originalmatrixFile[!duplicated(originalmatrixFile$V1), ]
+cts <- data.frame(cleanedmatrixFile[,-1], row.names=cleanedmatrixFile[,1])
+
+coldata <- read.delim("Sample_metadata.txt", sep='\t',row.names=1,header=TRUE )
+colnames(cts) <- rownames(coldata)
+
+# Adding a column 'group' to represent interaction of treatment*time:
+coldata$group <- factor(paste0(coldata$Treatment, coldata$Time))
+
+#Set up factor type for everything except time:
+coldata$Time <- as.factor(coldata$Time)
+coldata$Treatment <- as.factor(coldata$Treatment)
+coldata$Control <- as.factor(coldata$Control)
+coldata$F13Mut <- as.factor(coldata$F13Mut)
+coldata$F13 <- as.factor(coldata$F13)
+coldata$GHuMut <- as.factor(coldata$GHuMut)
+coldata$GHu <- as.factor(coldata$GHu)
+coldata$X12_day <- as.factor(coldata$X12_day)
+coldata$X7_day <- as.factor(coldata$X7_day)
+coldata$X4_day <- as.factor(coldata$X4_day)
+coldata$Symptoms <- as.factor(coldata$Symptoms)
+coldata$group <- as.factor(coldata$group)
+
+ggplot(data=cts, )
+barplot(colSums(cts[,1:75]))
+sum(colSums(cts[,1:75]))/75
+
+# conduct differential expression analysis
+
+# Deseq2 model construction: (design = ~ Treatment + Time + Interaction)
+dds <- DESeqDataSetFromMatrix(countData = cts, colData = coldata, design = ~1 + group)
+keep <- rowSums(counts(dds)) >= 75
+dds <- dds[keep,]
+
+# Run DeSeq2
+dds_out <- DESeq(dds)
+plotDispEsts(dds_out)
+
+# Transformation
+vsd <- vst(dds_out, nsub=500)
+# plotDispEst(vsd)
+cts_vst <- assay(vsd)
+cts_vst <- as.data.frame(t(cts_vst))
+datExpr0 <- as.matrix(cts_vst)
+
+```
+
+```{r}
+# extract out differentially abundant transcripts against mock control at each time point
+
+# GHu WT vs Control
+controlghu4 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt4", "Control4"),alpha=0.05))
+controlghu7 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt7", "Control7"),alpha=0.05))
+controlghu12 <- data.frame(results(dds_out, contrast=c("group", "ghu_wt12", "Control12"),alpha=0.05))
+
+controlghuwt4 <- subset(controlghu4, padj<0.05 & abs(log2FoldChange)>1) # 2 DATs
+controlghuwt7 <- subset(controlghu7, padj<0.05 & abs(log2FoldChange)>1) # 2669 DATs
+controlghuwt12 <- subset(controlghu12, padj<0.05 & abs(log2FoldChange)>1) # 45 DATs
+
+head(controlghuwt7)
+#F13 WT vs Control
+f13wtvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_wt4","Control4"),alpha=0.05))
+f13wtvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "f13_wt7","Control7"),alpha=0.05))
+f13wtvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "f13_wt12","Control12"),alpha=0.05))
+
+controlf13wt4 <- subset(f13wtvscontrol4, padj<0.05 & abs(log2FoldChange)>1) # 391 DATs
+controlf13wt7 <- subset(f13wtvscontrol7, padj<0.05 & abs(log2FoldChange)>1) # 749 DATs
+controlf13wt12 <- subset(f13wtvscontrol12, padj<0.05 & abs(log2FoldChange)>1) # 267 DATs
+
+#GHu Mutant vs Control
+ghumuttvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut4","Control4"),alpha=0.05))
+ghumuttvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut7","Control7"),alpha=0.05))
+ghumuttvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "ghu_mut12","Control12"),alpha=0.05))
+
+controlghumut4 <- subset(ghumuttvscontrol4, padj<0.05 & abs(log2FoldChange)>1) # 163 DATs
+controlghumut7 <- subset(ghumuttvscontrol7, padj<0.05 & abs(log2FoldChange)>1) # 58 DATs
+controlghumut12 <- subset(ghumuttvscontrol12, padj<0.05 & abs(log2FoldChange)>1) # 74 DATs
+
+#F13 Mut vs Control
+f13mutvscontrol4 <- data.frame(results(dds_out, contrast=c("group", "f13_mut4","Control4"),alpha=0.05))
+f13mutvscontrol7 <- data.frame(results(dds_out, contrast=c("group", "f13_mut7","Control7"),alpha=0.05))
+f13mutvscontrol12 <- data.frame(results(dds_out, contrast=c("group", "f13_mut12","Control12"),alpha=0.05))
+
+controlf13mut4 <- subset(f13mutvscontrol4, padj<0.05 & abs(log2FoldChange)>1) # 1086 DATs
+controlf13mut7 <- subset(f13mutvscontrol7, padj<0.05 & abs(log2FoldChange)>1) # 352 DATs
+controlf13mut12 <- subset(f13mutvscontrol12, padj<0.05 & abs(log2FoldChange)>1) # 306 DATs
+
+```
+
+#Import KEGG terms
+```{r}
+# read the data
+eggnog_data <- read.csv("out.emapper.annotations (3).csv", header = TRUE)
+#get columns 1 (query) and 9 (KO terms)
+kegg_data <- eggnog_data[c(1,4)]
+# clean up by removing the "ko:" in front of every KO term
+kegg_data$KEGG_ko <- gsub("ko:", "", as.character(kegg_data$KEGG_ko))
+# expand, since some genes/proteins will have multiple assigned KO terms
+kegg <- data.table(kegg_data)
+kegg <- kegg[, list(KEGG_ko = unlist(strsplit(KEGG_ko , ","))), by = query]
+# select the needed columns
+kegg_final <- kegg[,c(2,1)]
+```
+
+```{r}
+# From Niben 1.0.1
+# read.gmt("GO_Niben3p.gmt")
+# upload_GMT_file("realGO_Niben3p.gmt")
+# CUSTOM input file for proteins can be used as 'gp__vfEv_AX8y_NVs'
+# ALternative updated GO terms from Roy et al. 2024
+
+#up_result1 <-  gost(names_upreg1, organism = 'gp__vfEv_AX8y_NVs', significant = T) 
+#down_result1 <- gost(names_downreg1, organism = 'gp__vfEv_AX8y_NVs', significant = T) 
+#up_result2 <-  gost(names_upreg2, organism = 'gp__HTvx_rYJC_ffE', significant = T) 
+#down_result2 <- gost(names_downreg2, organism = 'gp__vfEv_AX8y_NVs', significant = T) 
+#up_result3 <-  gost(names_upreg3, organism = 'gp__vfEv_AX8y_NVs', significant = T) 
+#down_result3 <- gost(names_downreg3, organism = 'gp__vfEv_AX8y_NVs', significant = T)
+```
+
+```{r}
+
+```
+
+```{r}
+
+contrast1 <- c("group", "f13_mut4", "Control4")
+contrast2 <- c("group", "f13_mut7", "Control7")
+contrast3 <- c("group", "f13_mut12", "Control12")
+
+genes_contrast1 <- get_sorted_genes(dds_out, contrast1)
+genes_contrast2 <- get_sorted_genes(dds_out, contrast2)
+genes_contrast3 <- get_sorted_genes(dds_out, contrast3)
+
+upregulated_contrast1 <- genes_contrast1$upregulated
+downregulated_contrast1 <- genes_contrast1$downregulated
+
+upregulated_contrast2 <- genes_contrast2$upregulated
+downregulated_contrast2 <- genes_contrast2$downregulated
+
+upregulated_contrast3 <- genes_contrast3$upregulated
+downregulated_contrast3 <- genes_contrast3$downregulated
+
+names_upreg1 <- noquote(rownames(upregulated_contrast1))
+names_downreg1 <- noquote(rownames(downregulated_contrast1))
+names_upreg2 <- noquote(rownames(upregulated_contrast2))
+names_downreg2 <- noquote(rownames(downregulated_contrast2))
+names_upreg3 <- noquote(rownames(upregulated_contrast3))
+names_downreg3 <- noquote(rownames(downregulated_contrast3))
+
+up_result1 <-  gost(names_upreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result1 <- gost(names_downreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result2 <-  gost(names_upreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result2 <- gost(names_downreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result3 <-  gost(names_upreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result3 <- gost(names_downreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T)
+
+FM_up_frame1 <- data.frame("condition" = "Control vs F13 Mutant 4dpi", "GOghu" = up_result1$result$term_id,
+"name" = up_result1$result$term_name, "ratio" = up_result1$result$term_size, "P.value" = up_result1$result$p_value)
+FM_down_frame1 <- data.frame("condition" = "Control vs F13 Mutant 4dpi", "GOghu" = down_result1$result$term_id,
+"name" = down_result1$result$term_name, "ratio" = down_result1$result$term_size, "P.value" = down_result1$result$p_value)
+FM_up_frame2 <- data.frame("condition" = "Control vs F13 Mutant 7dpi", "GOghu" = up_result2$result$term_id,
+"name" = up_result2$result$term_name, "ratio" = up_result2$result$term_size, "P.value" = up_result2$result$p_value)
+FM_down_frame2 <- data.frame("condition" = "Control vs F13 Mutant 7dpi", "GOghu" = down_result2$result$term_id,
+"name" = down_result2$result$term_name, "ratio" = down_result2$result$term_size, "P.value" = down_result2$result$p_value)
+FM_up_frame3 <- data.frame("condition" = "Control vs F13 Mutant 12dpi", "GOghu" = up_result3$result$term_id,
+"name" = up_result3$result$term_name, "ratio" = up_result3$result$term_size, "P.value" = up_result3$result$p_value)
+FM_down_frame3 <- data.frame("condition" = "Control vs F13 Mutant 12dpi", "GOghu" = down_result3$result$term_id,
+"name" = down_result3$result$term_name, "ratio" = down_result3$result$term_size, "P.value" = down_result3$result$p_value)
+
+
+
+
+f13mutKEGG4UP <- enricher(names_upreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13mutKEGG4UP, showCategory=200, label_format=10, title="F13 mutant vs Mock Control 4dpi upregulated")
+f13mutKEGG4DOWN <- enricher(names_downreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13mutKEGG4DOWN, showCategory=200, label_format=10, title="F13 mutant vs Mock Control 4dpi downregulated")
+f13mutKEGG7UP <- enricher(names_upreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13mutKEGG7UP, showCategory=200, label_format=10, title="F13 mutant vs Mock Control 7dpi upregulated")
+f13mutKEGG7DOWN <- enricher(names_downreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13mutKEGG7DOWN, showCategory=200, label_format=10, title="F13 mutant vs Mock Control 7dpi downregulated")
+f13mutKEGG12UP <- enricher(names_upreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13mutKEGG12UP, showCategory=200, label_format=10, title="F13 mutant vs Mock Control 12dpi upregulated")
+f13mutKEGG12DOWN <- enricher(names_downreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13mutKEGG12DOWN, showCategory=200, label_format=10, title="F13 mutant vs Mock Control 12dpi downregulated")
+
+
+noquote(f13mutKEGG4UP$ID)
+noquote(f13mutKEGG4DOWN$ID)
+noquote(f13mutKEGG7UP$ID)
+noquote(f13mutKEGG7DOWN$ID)
+noquote(f13mutKEGG12UP$ID)
+noquote(f13mutKEGG12DOWN$ID)
+
+
+
+
+```
+
+```{r}
+up_result1 <-  gost(names_upreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result1 <- gost(names_downreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result2 <-  gost(names_upreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result2 <- gost(names_downreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result3 <-  gost(names_upreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result3 <- gost(names_downreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T)
+
+up_frame1 <- data.frame("condition" = "Upregulated 4dpi", "GOghu" = up_result1$result$term_id,
+"name" = up_result1$result$term_name, "ratio" = up_result1$result$term_size, "P.value" = up_result1$result$p_value)
+down_frame1 <- data.frame("condition" = "Downregulated 4dpi", "GOghu" = down_result1$result$term_id,
+"name" = down_result1$result$term_name, "ratio" = down_result1$result$term_size, "P.value" = down_result1$result$p_value)
+up_frame2 <- data.frame("condition" = "Upregulated 7dpi", "GOghu" = up_result2$result$term_id,
+"name" = up_result2$result$term_name, "ratio" = up_result2$result$term_size, "P.value" = up_result2$result$p_value)
+down_frame2 <- data.frame("condition" = "Downregulated 7dpi", "GOghu" = down_result2$result$term_id,
+"name" = down_result2$result$term_name, "ratio" = down_result2$result$term_size, "P.value" = down_result2$result$p_value)
+up_frame3 <- data.frame("condition" = "Upregulated 12dpi", "GOghu" = up_result3$result$term_id,
+"name" = up_result3$result$term_name, "ratio" = up_result3$result$term_size, "P.value" = up_result3$result$p_value)
+down_frame3 <- data.frame("condition" = "Downregulated 12dpi", "GOghu" = down_result3$result$term_id,
+"name" = down_result3$result$term_name, "ratio" = down_result3$result$term_size, "P.value" = down_result3$result$p_value)
+
+GO_FM4_down$name <- gsub("_", " ", GO_FM4_down$name)
+
+
+
+
+
+p<- ggplot(data = c(down_frame2,down_frame3), aes(x = "F13 Mutant Downregulated vs Mock Control", y = name, 
+                        color = P.value, size = ratio)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() + 
+  ylab("") + 
+  xlab("") + 
+  ggtitle("GO enrichment analysis")
+p
+```
+
+```{r}
+contrast1 <- c("group", "ghu_mut4", "Control4")
+contrast2 <- c("group", "ghu_mut7", "Control7")
+contrast3 <- c("group", "ghu_mut12", "Control12")
+
+genes_contrast1 <- get_sorted_genes(dds_out, contrast1)
+genes_contrast2 <- get_sorted_genes(dds_out, contrast2)
+genes_contrast3 <- get_sorted_genes(dds_out, contrast3)
+
+upregulated_contrast1 <- genes_contrast1$upregulated
+downregulated_contrast1 <- genes_contrast1$downregulated
+
+upregulated_contrast2 <- genes_contrast2$upregulated
+downregulated_contrast2 <- genes_contrast2$downregulated
+
+upregulated_contrast3 <- genes_contrast3$upregulated
+downregulated_contrast3 <- genes_contrast3$downregulated
+
+names_upreg1 <- noquote(rownames(upregulated_contrast1))
+names_downreg1 <- noquote(rownames(downregulated_contrast1))
+names_upreg2 <- noquote(rownames(upregulated_contrast2))
+names_downreg2 <- noquote(rownames(downregulated_contrast2))
+names_upreg3 <- noquote(rownames(upregulated_contrast3))
+names_downreg3 <- noquote(rownames(downregulated_contrast3))
+
+up_result1 <-  gost(names_upreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result1 <- gost(names_downreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result2 <-  gost(names_upreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result2 <- gost(names_downreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result3 <-  gost(names_upreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result3 <- gost(names_downreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T)
+
+GM_up_frame1 <- data.frame("condition" = "Control vs GHu Mutant 4dpi", "GOghu" = up_result1$result$term_id,
+"name" = up_result1$result$term_name, "ratio" = up_result1$result$term_size, "P.value" = up_result1$result$p_value)
+GM_down_frame1 <- data.frame("condition" = "Control vs GHu Mutant 4dpi", "GOghu" = down_result1$result$term_id,
+"name" = down_result1$result$term_name, "ratio" = down_result1$result$term_size, "P.value" = down_result1$result$p_value)
+#GM_up_frame2 <- data.frame("condition" = "Control vs GHu Mutant 7dpi", "GOghu" = up_result2$result$term_id,
+#"name" = up_result2$result$term_name, "ratio" = up_result2$result$term_size, "P.value" = up_result2$result$p_value)
+GM_down_frame2 <- data.frame("condition" = "Control vs GHu Mutant 7dpi", "GOghu" = down_result2$result$term_id,
+"name" = down_result2$result$term_name, "ratio" = down_result2$result$term_size, "P.value" = down_result2$result$p_value)
+GM_up_frame3 <- data.frame("condition" = "Control vs GHu Mutant 12dpi", "GOghu" = up_result3$result$term_id,
+"name" = up_result3$result$term_name, "ratio" = up_result3$result$term_size, "P.value" = up_result3$result$p_value)
+GM_down_frame3 <- data.frame("condition" = "Control vs GHu Mutant 12dpi", "GOghu" = down_result3$result$term_id,
+"name" = down_result3$result$term_name, "ratio" = down_result3$result$term_size, "P.value" = down_result3$result$p_value)
+
+ghumutKEGG4UP <- enricher(names_upreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghumutKEGG4UP, showCategory=200, label_format=10, title="GHu mutant vs Mock Control 4dpi upregulated")
+ghumutKEGG4DOWN <- enricher(names_downreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghumutKEGG4DOWN, showCategory=200, label_format=10, title="GHu mutant vs Mock Control 4dpi downregulated")
+ghumutKEGG7UP <- enricher(names_upreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghumutKEGG7UP, showCategory=200, label_format=10, title="GHu mutant vs Mock Control 7dpi upregulated")
+ghumutKEGG7DOWN <- enricher(names_downreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghumutKEGG7DOWN, showCategory=200, label_format=10, title="GHu mutant vs Mock Control 7dpi downregulated")
+ghumutKEGG12UP <- enricher(names_upreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghumutKEGG12UP, showCategory=200, label_format=10, title="GHu mutant vs Mock Control 12dpi upregulated")
+ghumutKEGG12DOWN <- enricher(names_downreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghumutKEGG12DOWN, showCategory=200, label_format=10, title="GHu mutant vs Mock Control 12dpi downregulated")
+
+
+noquote(ghumutKEGG4UP$ID)
+noquote(ghumutKEGG4DOWN$ID)
+noquote(ghumutKEGG7UP$ID)
+noquote(ghumutKEGG7DOWN$ID)
+noquote(ghumutKEGG12UP$ID)
+noquote(ghumutKEGG12DOWN$ID)
+
+
+
+```
+
+```{r}
+contrast1 <- c("group", "ghu_wt4", "Control4")
+contrast2 <- c("group", "ghu_wt7", "Control7")
+contrast3 <- c("group", "ghu_wt12", "Control12")
+
+genes_contrast1 <- get_sorted_genes(dds_out, contrast1)
+genes_contrast2 <- get_sorted_genes(dds_out, contrast2)
+genes_contrast3 <- get_sorted_genes(dds_out, contrast3)
+
+upregulated_contrast1 <- genes_contrast1$upregulated
+downregulated_contrast1 <- genes_contrast1$downregulated
+
+upregulated_contrast2 <- genes_contrast2$upregulated
+downregulated_contrast2 <- genes_contrast2$downregulated
+
+upregulated_contrast3 <- genes_contrast3$upregulated
+downregulated_contrast3 <- genes_contrast3$downregulated
+
+names_upreg1 <- noquote(rownames(upregulated_contrast1))
+names_downreg1 <- noquote(rownames(downregulated_contrast1))
+names_upreg2 <- noquote(rownames(upregulated_contrast2))
+names_downreg2 <- noquote(rownames(downregulated_contrast2))
+names_upreg3 <- noquote(rownames(upregulated_contrast3))
+names_downreg3 <- noquote(rownames(downregulated_contrast3))
+
+up_result1 <-  gost(names_upreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result1 <- gost(names_downreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result2 <-  gost(names_upreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result2 <- gost(names_downreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result3 <-  gost(names_upreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result3 <- gost(names_downreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T)
+
+#GW_up_frame1 <- data.frame("condition" = "Control vs GHu WT 4dpi", "GOghu" = up_result1$result$term_id,
+#"name" = up_result1$result$term_name, "ratio" = up_result1$result$term_size, "P.value" = up_result1$result$p_value)
+#GW_down_frame1 <- data.frame("condition" = "Control vs GHu WT 4dpi", "GOghu" = down_result1$result$term_id,
+#"name" = down_result1$result$term_name, "ratio" = down_result1$result$term_size, "P.value" = down_result1$result$p_value)
+GW_up_frame2 <- data.frame("condition" = "Control vs GHu WT 7dpi", "GOghu" = up_result2$result$term_id,
+"name" = up_result2$result$term_name, "ratio" = up_result2$result$term_size, "P.value" = up_result2$result$p_value)
+GW_down_frame2 <- data.frame("condition" = "Control vs GHu WT 7dpi", "GOghu" = down_result2$result$term_id,
+"name" = down_result2$result$term_name, "ratio" = down_result2$result$term_size, "P.value" = down_result2$result$p_value)
+GW_up_frame3 <- data.frame("condition" = "Control vs GHu WT 12dpi", "GOghu" = up_result3$result$term_id,
+"name" = up_result3$result$term_name, "ratio" = up_result3$result$term_size, "P.value" = up_result3$result$p_value)
+#GW_down_frame3 <- data.frame("condition" = "Control vs GHu WT 12dpi", "GOghu" = down_result3$result$term_id,
+#"name" = down_result3$result$term_name, "ratio" = down_result3$result$term_size, "P.value" = down_result3$result$p_value)
+
+
+
+#ghuwtKEGG4UP <- enricher(names_upreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+#enrichplot::dotplot(ghuwtKEGG4UP, showCategory=200, label_format=10, title="GHu wildtype vs Mock Control 4dpi upregulated")
+#ghuwtKEGG4DOWN <- enricher(names_downreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+#enrichplot::dotplot(ghuwtKEGG4DOWN, showCategory=200, label_format=10, title="GHu wildtype vs Mock Control 4dpi downregulated")
+ghuwtKEGG7UP <- enricher(names_upreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghuwtKEGG7UP, showCategory=200, label_format=10, title="GHu wildtype vs Mock Control 7dpi upregulated")
+ghuwtKEGG7DOWN <- enricher(names_downreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghuwtKEGG7DOWN, showCategory=200, label_format=10, title="GHu wildtype vs Mock Control 7dpi downregulated")
+ghuwtKEGG12UP <- enricher(names_upreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghuwtKEGG12UP, showCategory=200, label_format=10, title="GHu wildtype vs Mock Control 12dpi upregulated")
+ghuwtKEGG12DOWN <- enricher(names_downreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(ghuwtKEGG12DOWN, showCategory=200, label_format=10, title="GHu wildtype vs Mock Control 12dpi downregulated")
+
+
+#noquote(ghuwtKEGG4UP$ID)
+#noquote(ghuwtKEGG4DOWN$ID)
+noquote(ghuwtKEGG7UP$ID)
+noquote(ghuwtKEGG7DOWN$ID)
+noquote(ghuwtKEGG12UP$ID)
+noquote(ghuwtKEGG12DOWN$ID)
+
+```
+
+```{r}
+contrast1 <- c("group", "f13_wt4", "Control4")
+contrast2 <- c("group", "f13_wt7", "Control7")
+contrast3 <- c("group", "f13_wt12", "Control12")
+
+genes_contrast1 <- get_sorted_genes(dds_out, contrast1)
+genes_contrast2 <- get_sorted_genes(dds_out, contrast2)
+genes_contrast3 <- get_sorted_genes(dds_out, contrast3)
+
+upregulated_contrast1 <- genes_contrast1$upregulated
+downregulated_contrast1 <- genes_contrast1$downregulated
+
+upregulated_contrast2 <- genes_contrast2$upregulated
+downregulated_contrast2 <- genes_contrast2$downregulated
+
+upregulated_contrast3 <- genes_contrast3$upregulated
+downregulated_contrast3 <- genes_contrast3$downregulated
+
+names_upreg1 <- noquote(rownames(upregulated_contrast1))
+names_downreg1 <- noquote(rownames(downregulated_contrast1))
+names_upreg2 <- noquote(rownames(upregulated_contrast2))
+names_downreg2 <- noquote(rownames(downregulated_contrast2))
+names_upreg3 <- noquote(rownames(upregulated_contrast3))
+names_downreg3 <- noquote(rownames(downregulated_contrast3))
+
+up_result1 <-  gost(names_upreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result1 <- gost(names_downreg1, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result2 <-  gost(names_upreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result2 <- gost(names_downreg2, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+up_result3 <-  gost(names_upreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T) 
+down_result3 <- gost(names_downreg3, organism = 'gp__CkPw_qBVv_TQo', significant = T)
+
+#FW_up_frame1 <- data.frame("condition" = "Control vs F13 WT 4dpi", "GOghu" = up_result1$result$term_id,
+#"name" = up_result1$result$term_name, "ratio" = up_result1$result$term_size, "P.value" = up_result1$result$p_value)
+FW_down_frame1 <- data.frame("condition" = "Control vs F13 WT 4dpi", "GOghu" = down_result1$result$term_id,
+"name" = down_result1$result$term_name, "ratio" = down_result1$result$term_size, "P.value" = down_result1$result$p_value)
+FW_up_frame2 <- data.frame("condition" = "Control vs F13 WT 7dpi", "GOghu" = up_result2$result$term_id,
+"name" = up_result2$result$term_name, "ratio" = up_result2$result$term_size, "P.value" = up_result2$result$p_value)
+FW_down_frame2 <- data.frame("condition" = "Control vs F13 WT 7dpi", "GOghu" = down_result2$result$term_id,
+"name" = down_result2$result$term_name, "ratio" = down_result2$result$term_size, "P.value" = down_result2$result$p_value)
+FW_up_frame3 <- data.frame("condition" = "Control vs F13 WT 12dpi", "GOghu" = up_result3$result$term_id,
+"name" = up_result3$result$term_name, "ratio" = up_result3$result$term_size, "P.value" = up_result3$result$p_value)
+FW_down_frame3 <- data.frame("condition" = "Control vs F13 WT 12dpi", "GOghu" = down_result3$result$term_id,
+"name" = down_result3$result$term_name, "ratio" = down_result3$result$term_size, "P.value" = down_result3$result$p_value)
+
+
+#f13wtKEGG4UP <- enricher(names_upreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+#enrichplot::dotplot(f13wtKEGG4UP, showCategory=200, label_format=10, title="F13 WT vs Mock Control 4dpi upregulated")
+f13wtKEGG4DOWN <- enricher(names_downreg1, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13wtKEGG4DOWN, showCategory=200, label_format=10, title="F13 WT vs Mock Control 4dpi downregulated")
+f13wtKEGG7UP <- enricher(names_upreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13wtKEGG7UP, showCategory=200, label_format=10, title="F13 WT vs Mock Control 7dpi upregulated")
+f13wtKEGG7DOWN <- enricher(names_downreg2, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13wtKEGG7DOWN, showCategory=200, label_format=10, title="F13 WT vs Mock Control 7dpi downregulated")
+f13wtKEGG12UP <- enricher(names_upreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13wtKEGG12UP, showCategory=200, label_format=10, title="F13 WT vs Mock Control 12dpi upregulated")
+f13wtKEGG12DOWN <- enricher(names_downreg3, TERM2GENE=kegg_final, pvalueCutoff = 0.05, pAdjustMethod = "BH", qvalueCutoff = 0.05, minGSSize = 10)
+enrichplot::dotplot(f13wtKEGG12DOWN, showCategory=200, label_format=10, title="F13 WT vs Mock Control 12dpi downregulated")
+
+
+
+noquote(f13wtKEGG4DOWN$ID)
+noquote(f13wtKEGG7UP$ID)
+noquote(f13wtKEGG7DOWN$ID)
+noquote(f13wtKEGG12UP$ID)
+noquote(f13wtKEGG12DOWN$ID)
+
+
+```
+
+```{r}
+# Downreg leaf transcriptomics
+#GW_up_frame2,"Control vs GHu WT 7dpi",
+exp_wide_ontology <- list(FM_up_frame2,FM_up_frame3,FW_up_frame2,FW_up_frame3,GM_up_frame1,GM_up_frame3,GW_up_frame3)
+GO_plot_all <- Reduce(function(x,y) merge(x,y, all=TRUE), exp_wide_ontology, accumulate=F)
+
+GO_plot_all$condition <- factor(GO_plot_all$condition, levels = c("Control vs GHu Mutant 4dpi","Control vs F13 Mutant 7dpi","Control vs F13 WT 7dpi","Control vs F13 Mutant 12dpi","Control vs F13 WT 12dpi","Control vs GHu Mutant 12dpi","Control vs GHu WT 12dpi"))
+#GO_plot_all$name <- substring(GO_plot_all$name, 1, 35)
+ggplot(data = GO_plot_all, aes(x = condition, y = name, 
+                        color = P.value, size = ratio)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() + 
+  ylab("") + 
+  xlab("") + 
+  ggtitle("Up Leaf") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), text = element_text(size=14), plot.margin = margin(t = 10, r = 10, b = 10, l = 150))
+```
+
+```{r}
+
+
+#,Control vs GHu WT 7dpi
+
+exp_wide_ontology <- list(FM_down_frame2,FM_down_frame3,GM_down_frame1,GM_down_frame2,GM_down_frame3,FW_down_frame1,FW_down_frame2,FW_down_frame3)
+GO_plot_all <- Reduce(function(x,y) merge(x,y, all=TRUE), exp_wide_ontology, accumulate=F)
+
+GO_plot_all$condition <- factor(GO_plot_all$condition, levels = c("Control vs F13 WT 4dpi","Control vs GHu Mutant 4dpi","Control vs F13 Mutant 7dpi","Control vs F13 WT 7dpi","Control vs GHu Mutant 7dpi","Control vs F13 Mutant 12dpi","Control vs F13 WT 12dpi","Control vs GHu Mutant 12dpi"))
+GO_plot_all$name <- substring(GO_plot_all$name, 1, 45)
+GO_plot_all <- GO_plot_all %>%
+  mutate(name = reorder(name, -P.value))
+ggplot(data = GO_plot_all, aes(x = condition, y = name, 
+                        color = P.value, size = ratio)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() + 
+  ylab("") + 
+  xlab("") + 
+  ggtitle("Downregulted GSEA in leaves") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), text = element_text(size=16), plot.margin = margin(t = 10, r = 10, b = 10, l = 300))
+
+GW_down_frame2$name <- substring(GW_down_frame2$name, 1, 40)
+p<- ggplot(data = GW_down_frame2, aes(x = "GHu WT Downregulated vs Mock Control", y = name, 
+                        color = P.value, size = ratio)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() + 
+  ylab("") + 
+  xlab("") + 
+  ggtitle("GO enrichment analysis")
+p +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1), text = element_text(size=16), plot.margin = margin(t = 10, r = 10, b = 10, l = 300))
+
+
+q<- ggplot(data = GW_up_frame2, aes(x = "GHu WT Upregulated vs Mock Control", y = name, 
+                        color = P.value, size = ratio)) + 
+  geom_point() +
+  scale_color_gradient(low = "red", high = "blue") +
+  theme_bw() + 
+  ylab("") + 
+  xlab("") + 
+  ggtitle("GO enrichment analysis")
+q
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+abscisicacid <- c("Niben101Scf05174g02005","Niben101Scf06405g00006","Niben101Scf00090g07001",
+                   "Niben101Scf02408g01007","Niben101Scf03953g06002","Niben101Scf07103g03015",
+                   "Niben101Scf11960g00002","Niben101Scf01873g01004","Niben101Scf07288g09006","Niben101Scf10415g00004")
+p <- searchNotesAndPlotFiltered.1(annotation2, abscisicacid, dds_out)
+print(p)
+
+abscisicacid <- c("Niben101Scf13558g01006","Niben101Scf00851g05004","Niben101Scf00151g10011",
+                   "Niben101Scf00151g10016")
+p <- searchNotesAndPlotFiltered.1(annotation2, abscisicacid, dds_out)
+print(p)
+
+
+gene_name <- "E3 ubiquitin-protein ligase COP1"
+p <- searchNotesAndPlotFiltered3(annotation2, gene_name, dds_out)
+print(p)
+
+gene_name <- "14-3-3"
+p <- searchNotesAndPlotFiltered(annotation2, gene_name, dds_out)
+print(p)
+
+
+nadph <- plotCounts(dds_out, gene = "Niben101Scf02922g01012", intgroup=c('Time','Treatment'), normalized = T, returnData = T)
+ggboxplot(nadph, x="Time", y="count", fill="Treatment", palette = c('gray','lightblue','blue','red','red4'), title="")+ theme(axis.text.x = element_text(angle = 0, vjust = 1, hjust=0.5, size=20))
+
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
