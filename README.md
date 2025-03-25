@@ -55,7 +55,6 @@
           <p>
             Whole crown root systems of <em>N. benthamiana</em> plants (infected with GFLV strains and PepRSV or uninoculated) were excavated by hand and processed according to our previously described methodology. Key root traits—including total number of root tips, average diameter (mm), number of branch points, and total volume (cubic mm)—were measured with minimal pre-processing and no normalization. PepRSV-infected plants served as a positive control. For GFLV-infected plants with replicates grown for varying durations, a z-score normalization of the RSA traits was performed relative to non-infected controls.
           </p>
-          <img src="./Misc/RSA_figure.png" alt="Depiction of analyzed root system of <em>Nicotiana benthamiana</em>">
         </article>
         <!-- Statistical Analyses and Visualization -->
         <article>
@@ -90,12 +89,18 @@
             A total of 342 scans of <em>N. benthamiana</em> roots were obtained on a flatbed scanner and 2,555 parsed images were subsequently segmented and analyzed using Rhizovision Explorer, as previously described. RSA traits were extracted per experimental replicate and saved in Microsoft Excel files (<a href="https://doi.org/10.5281/zenodo.14844388" target="_blank">DOI: 10.5281/zenodo.14844388</a>). Outlier experimental replicates (3 and 13) containing too few plants per treatment were excluded from further analyses. Additional outliers were detected using the interquartile range (IQR) exemption, excluding individuals more than 1.5 times the IQR from the mean. Manual exemption of eight additional samples resulted in a final matrix of 1,298 individual plant root systems.
           </p>
           <p>
-            The complete dataset is represented by the files <code>RhizoAllCompiled.xlsx</code> (raw data) and <code>RhizoAllNormalized.xlsx</code> (normalized and adjusted data). An example of a processed <em>N. benthamiana</em> root system and its basic measurements is provided for reference (Fig. 3a).
+            The complete dataset is represented by the files <code>RhizoAllCompiled.xlsx</code> (raw data) and <code>RhizoAllNormalized.xlsx</code> (normalized and adjusted data). An example of a processed <em>N. benthamiana</em> root system and its basic measurements is provided for reference (below).
           </p>
+          <img src="./Misc/RSA_figure.png" alt="Depiction of analyzed root system of <em>Nicotiana benthamiana</em>">
       <!-- File Directory & Documentation Section -->
       <section id="files">
         <h2>File Directory & Documentation</h2>
         <p>
-          [A detailed explanation of the repository file structure will be provided here. This should include descriptions of scripts, data files, documentation, and other relevant materials.]
+          Three main subfolders contain the code and necessary files to perform analysis and visualization of the data associated with this project. 
+        <ul>
+          <li><code>Root phenotyping analysis</code></li>
+          <li><code>'Omics data analysis</code></li>
+          <li><code>Foliar phenotyping analysis</code></li>
+        </ul>
         </p>
       </section>
