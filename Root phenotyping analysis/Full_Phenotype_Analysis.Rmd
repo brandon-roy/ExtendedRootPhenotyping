@@ -1,0 +1,961 @@
+---
+title: "Full Root Phenotype"
+author: "Brandon G Roy"
+date: "2024-01-10"
+output: html_document
+---
+
+```{r}
+# import and load all applicable programs
+
+library(tidyverse)
+library(ggpubr)
+library(rstatix)
+library(tidyr)
+library(readxl)
+library(dplyr)
+library(multcompView)
+library(FSA)
+library(corrplot)
+library(factoextra)
+library(lme4)
+library(lmerTest)
+library(psych)
+library(FSA)
+library(lattice)
+library(coin)
+library(rcompanion)
+library(PMCMRplus)
+library(MASS)
+library(ggplot2)
+library(hrbrthemes)
+library(xlsx)
+library(emmeans)
+library(rgl)
+library(plotly)
+library(gg3D)
+
+colorlist15 <- c("#E9EAE0","#003060","#055C9D","#0E86D4","#68BBE3","#b6dbff","#490092","#710019","#C85250","#BA0F30","#E7625F","#ffb6db","#ffff6d","yellow3","#24ff24")
+colorlist16 <- c("#808080","#E9EAE0","#003060","#055C9D","#0E86D4","#68BBE3","#b6dbff","#490092","#710019","#C85250","#BA0F30","#E7625F","#ffb6db","#ffff6d","yellow3","#24ff24")
+```
+
+# Load in data and label accordingly
+
+```{r}
+
+X01_Rhizo <- read_excel("Rhizovision/01_Rhizo.xlsx")
+X02_Rhizo <- read_excel("Rhizovision/02_Rhizo.xlsx")
+X03_Rhizo <- read_excel("Rhizovision/03_Rhizo.xlsx")
+X04_Rhizo <- read_excel("Rhizovision/04_Rhizo.xlsx")
+X05_Rhizo <- read_excel("Rhizovision/05_Rhizo.xlsx")
+X06_Rhizo <- read_excel("Rhizovision/06_Rhizo.xlsx")
+X07_Rhizo <- read_excel("Rhizovision/07_Rhizo.xlsx")
+X08_Rhizo <- read_excel("Rhizovision/08_Rhizo.xlsx")
+X09_Rhizo <- read_excel("Rhizovision/09_Rhizo.xlsx")
+X10_Rhizo <- read_excel("Rhizovision/10_Rhizo.xlsx")
+X11_Rhizo <- read_excel("Rhizovision/11_Rhizo.xlsx")
+X12_Rhizo <- read_excel("Rhizovision/12_Rhizo.xlsx")
+X13_Rhizo <- read_excel("Rhizovision/13_Rhizo.xlsx")
+X14_Rhizo <- read_excel("Rhizovision/14_Rhizo.xlsx")
+X15_Rhizo <- read_excel("Rhizovision/15_Rhizo.xlsx")
+X16_Rhizo <- read_excel("Rhizovision/16_Rhizo.xlsx")
+X17_Rhizo <- read_excel("Rhizovision/17_Rhizo.xlsx")
+X18_Rhizo <- read_excel("Rhizovision/18_Rhizo.xlsx")
+
+RhizoAl <- rbind(X01_Rhizo, X02_Rhizo, X03_Rhizo, X04_Rhizo, X05_Rhizo, X06_Rhizo, X07_Rhizo, X08_Rhizo, X09_Rhizo, X10_Rhizo, X11_Rhizo, X12_Rhizo, X14_Rhizo, X15_Rhizo, X16_Rhizo, X18_Rhizo)
+
+RhizoAl %>%
+  group_by(treatment) %>%
+  summarise(
+    count = n(),
+    `number of root tips` = mean(`number of root tips`, na.rm=T),
+    `number of branch points` = mean(`number of branch points`),
+    `total root length (mm)` = mean(`total root length (mm)`),
+    `branching frequency` = mean(`branching frequency (mm^-1)`),
+    `network area (mm^2)` = mean(`network area (mm^2)`),
+    `average diameter (mm)` = mean(`average diameter (mm)`),
+    `median diameter (mm)` = mean(`median diameter (mm)`),
+    `perimeter (mm)` = mean(`perimeter (mm)`),
+    `volume (mm^3)` = mean(`volume (mm^3)`),
+    `surface area (mm^2)` = mean(`surface area (mm^2)`),
+    `dry biomass (g)` = mean(`total dry biomass (g)`),
+    `height (mm)` = mean(`height (mm)`)
+  )
+
+RhizoAll <- RhizoAl %>%
+  mutate(name = fct_relevel(treatment, 
+            "inoculated, non-infected", "mock control", "wildtype F13", 
+            "mutant F13-1E-G802K", "mutant F13-1E-N804S", "mutant F13-1E-G802K-N804S", 
+            "mutant F13-1E-2404-2424(GHu)", "mutant F13-1E-V5", "wildtype GHu", "mutant GHu-1E-K802G", "mutant GHu-1E-S804N", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-V5", "mutant GHu-1E-K802G-V5", "TRV"))
+
+
+RhizoAll %<>% arrange(treatment) %>%
+  mutate(treatment = factor(treatment, levels=c("inoculated, non-infected", "mock control", "wildtype F13", 
+            "mutant F13-1E-G802K", "mutant F13-1E-N804S", "mutant F13-1E-G802K-N804S", 
+            "mutant F13-1E-2404-2424(GHu)", "mutant F13-1E-V5", "wildtype GHu", "mutant GHu-1E-K802G", "mutant GHu-1E-S804N", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-V5", "mutant GHu-1E-K802G-V5", "TRV"))) %>% 
+  arrange(treatment)
+
+RhizoAll802 <- RhizoAll %>% 
+  mutate('802' = if_else(
+    treatment %in% c("mutant F13-1E-G802K", "wildtype GHu", "mutant GHu-1E-S804N", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)", "mutant GHu-1E-V5"), "K",
+    if_else(treatment %in% c("wildtype F13", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5", "mutant F13-1E-N804S", "mutant F13-1E-V5", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-2404-2424(F13)"),
+      "G", "0")))
+
+RhizoAll804 <- RhizoAll802 %>% 
+  mutate('804' = if_else(
+    treatment %in% c("wildtype GHu", "mutant F13-1E-N804S", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)", "mutant GHu-1E-V5", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5"), "S",
+    if_else(
+      treatment %in% c("wildtype F13", "mutant F13-1E-G802K", "mutant GHu-1E-2404-2424(F13)", "mutant F13-1E-V5", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N"), "N", "0")))
+
+RhizoAllDouble <- RhizoAll804 %>% 
+  mutate('Background' = if_else(
+    treatment %in% c("wildtype GHu", "mutant GHu-1E-V5", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5", "mutant GHu-1E-2404-2424(F13)",  "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N"), "GHu",
+    if_else(
+      treatment %in% c("wildtype F13", "mutant F13-1E-N804S", "mutant F13-1E-G802K",  "mutant F13-1E-V5", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)"),
+      "F13",
+      "0")))
+
+RhizoAllBoth <- RhizoAllDouble %>%
+  mutate('802/804' = if_else(
+    treatment %in% c("wildtype F13", "mutant F13-1E-V5", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-K802G-S804N"), "802 G 804 N",
+    if_else(
+      treatment %in% c("mutant F13-1E-G802K", "mutant GHu-1E-S804N"), "802 K 804 N",
+    if_else(
+      treatment %in% c("mutant F13-1E-N804S", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5"), "802 G 804 S",
+    if_else(
+      treatment %in% c("wildtype GHu", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)", "mutant GHu-1E-V5"), "802 K 804 S",
+    if_else(treatment %in% c("TRV"), "TRV", 
+    "non-infected")
+    ))))
+  )
+
+RhizoAlltagged <- RhizoAllBoth %>%
+  mutate('Tag' = if_else(treatment %in% c("mutant GHu-1E-V5", "mutant GHu-1E-K802G-V5", "mutant F13-1E-V5"),
+    "GFLV + V5 epitope",
+    if_else(treatment %in% c("mock control", "inoculated, non-infected"), "Non-infected",
+    if_else(treatment %in% c("TRV"), "TRV",
+    if_else(treatment %in% c("wildtype GHu", "mutant GHu-1E-K802G", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N", "wildtype F13", "mutant F13-1E-N804S", "mutant F13-1E-G802K", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)"), "GFLV only", "0"
+    ))))
+)
+
+RhizoAllTreatments <- RhizoAlltagged %>%
+  mutate('Virus' = if_else(treatment %in% c("wildtype GHu", "mutant GHu-1E-V5", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N", "wildtype F13", "mutant F13-1E-N804S", "mutant F13-1E-G802K",  "mutant F13-1E-V5", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)"), "GFLV", 
+    if_else(treatment %in% c("TRV"), "TRV", "0")))
+
+RhizoAllTreatments2 <- RhizoAllTreatments %>%
+  mutate(treatment = case_when(
+    treatment %in% c('inoculated, non-infected', 'mock control') ~ 'non-infected',
+  TRUE ~ treatment
+  ))
+
+RhizoAllTreatments2 %<>% arrange(treatment) %>%
+  mutate(treatment = factor(treatment, levels=c("non-infected", "wildtype F13", 
+            "mutant F13-1E-G802K", "mutant F13-1E-N804S", "mutant F13-1E-G802K-N804S", 
+            "mutant F13-1E-2404-2424(GHu)", "mutant F13-1E-V5", "wildtype GHu", "mutant GHu-1E-K802G", "mutant GHu-1E-S804N", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-V5", "mutant GHu-1E-K802G-V5", "TRV"))) %>% 
+  arrange(treatment)
+
+RhizoAllTreatments2 %>%
+  group_by(cohort) %>%
+  group_by(treatment) %>%
+  summarise(
+    count = n()
+  )
+
+#write.xlsx(RhizoAllTreatments2, file="RhizoAllCompiled.xlsx", append = FALSE)
+
+```
+
+# Merge data collected on 180 scan side flip by using plant number identifiers across all data
+
+```{r}
+# merge by scan side (180 degree flip data merge)
+
+RhizoAll2 <- RhizoAllTreatments2 %>%
+  group_by(cohort, plant, treatment, number) %>%
+  summarise_all(mean, na.rm = TRUE)
+
+summary <- RhizoAll2 %>%
+  group_by(treatment) %>%
+  summarise(
+    count = n(),
+    `number of root tips` = mean(`number of root tips`),
+    `number of branch points` = mean(`number of branch points`),
+    `total root length (mm)` = mean(`total root length (mm)`),
+    `branching frequency` = mean(`branching frequency (mm^-1)`),
+    `network area (mm^2)` = mean(`network area (mm^2)`),
+    `average diameter (mm)` = mean(`average diameter (mm)`),
+    `median diameter (mm)` = mean(`median diameter (mm)`),
+    `perimeter (mm)` = mean(`perimeter (mm)`),
+    `volume (mm^3)` = mean(`volume (mm^3)`),
+    `surface area (mm^2)` = mean(`surface area (mm^2)`),
+    `dry biomass (g)` = mean(`total dry biomass (g)`),
+    `height (mm)` = mean(`height (mm)`)
+  )
+
+plant_count <- RhizoAll2 %>%
+  group_by(treatment) %>%
+  summarise(
+    count = n())
+
+plant_count$count
+
+RhizoAllTreatments4 <- RhizoAll2
+
+# remove plants that fell outside normal growth stage during inoculation (coded tiny in either ROI or datasheet, these were never inoculated but still scanned at some point)
+
+RhizoAllTreatments5 <- RhizoAllTreatments4[-c(12,39,135,152,331,336,337,417,420,422),]
+
+# left with 1279 plants for normalization
+
+plant_count <- RhizoAllTreatments5 %>%
+  group_by(treatment) %>%
+  summarise(
+    count = n())
+
+
+# Removal of  outliers
+
+# Cohorts 13 and 17 were removed at the beginning as their growth was either halted too early or their growing conditions were drastically different from other groups. These replicates did not oppose hypotheses but were less than optimal for optimizing the normalization characteristics. 
+```
+
+# Z-score normalization 
+
+```{r}
+# Z-score normalization
+
+# Create a new dataframe for the normalized data
+RhizoAllTreatments3 <- RhizoAllTreatments5 %>%
+  mutate(across(c(11,16:47), ~as.numeric(as.character(.)), .names = "{.col}"))
+
+# Check for any conversion errors by summarizing NA counts
+summary_na <- RhizoAllTreatments3 %>%
+  summarise(across(c(11,16:47), ~sum(is.na(.))))
+
+# adjusted Z-score normalization
+RhizoNormal <- RhizoAllTreatments3
+
+for (i in c(11,16:47)) {
+  trait_index <- i
+  trait_name <- names(RhizoAllTreatments3)[trait_index]
+  normalized_name <- paste0("adjusted_normalized_", trait_name)
+  # Ensure the column is numeric
+  if (!is.numeric(RhizoAllTreatments3[[trait_name]])) {
+    next # Skip this column if it's not numeric
+  }
+  # Perform the normalization calculations
+  mean_non_infected <- mean(RhizoAllTreatments3[[trait_name]][RhizoAllTreatments3$treatment == "non-infected"], na.rm = TRUE)
+  sd_non_infected <- sd(RhizoAllTreatments3[[trait_name]][RhizoAllTreatments3$treatment == "non-infected"], na.rm = TRUE)
+  RhizoNormal[[normalized_name]] <- ifelse(!is.na(RhizoAllTreatments3[[trait_name]]), 
+                                           (RhizoAllTreatments3[[trait_name]] - mean_non_infected) / sd_non_infected, 
+                                           NA)
+  
+  # Adjust the normalized values to match the original data's scale
+  original_mean <- mean(RhizoAllTreatments3[[trait_name]], na.rm = TRUE)
+  original_sd <- sd(RhizoAllTreatments3[[trait_name]], na.rm = TRUE)
+  
+  RhizoNormal[[normalized_name]] <- RhizoNormal[[normalized_name]] * original_sd + original_mean
+}
+
+# RhizoNormal now has the adjusted normalized columns along with the original data
+
+#1279 plants were analyzed for their RSA after removal of outliers and experimental replicates that reside outside the scope of symptoms about 17 dpi
+
+#RhizoNormal_cleaned <- RhizoNormal %>% 
+#  filter(!is.na(`adjusted_normalized_number of root tips`))
+
+```
+
+# Correlation matrix calculation and plotting
+
+```{r}
+root_trait_matrix <- RhizoAllTreatments2[c(6:12,16:35)]
+
+root_cor <- cor(root_trait_matrix, use='complete.obs')
+
+res1 = cor.mtest(root_cor, conf.level=0.99)
+
+corrplot(root_cor, type = 'full', order='hclust', hclust.method='average', tl.col='black', tl.srt=45, p.mat = res1$p, sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.25, number.cex= 0.5, insig = 'label_sig', pch.col = 'grey20')
+
+
+
+#ggsave("correlation.tiff", width = 5, height = 7)
+
+
+
+root_trait_matrix <- RhizoNormal[c(6:12,55,57:66)]
+
+root_cor <- cor(root_trait_matrix, use='complete.obs')
+
+res1 = cor.mtest(root_cor, conf.level=0.99)
+corrplot(root_cor, type = 'full', order='hclust', hclust.method='average', tl.col='black', tl.srt=45, p.mat = res1$p, sig.level = c(0.001, 0.01, 0.05), pch.cex = 0.25, number.cex= 0.5, insig = 'label_sig', pch.col = 'grey20')
+
+```
+
+# Reassign RhizoNormal with appropriate labels
+
+```{r}
+
+plantspertreatment <- RhizoNormal %>%
+  group_by(cohort) %>%
+  group_by(treatment) %>%
+  summarise(
+    count = n()
+  )
+
+# Reassign RhizoNormal with correct categorical variables
+
+RhizoNormal <- RhizoNormal %>% 
+  mutate('802' = if_else(
+    treatment %in% c("mutant F13-1E-G802K", "wildtype GHu", "mutant GHu-1E-S804N", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)", "mutant GHu-1E-V5"), "K",
+    if_else(treatment %in% c("wildtype F13", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5", "mutant F13-1E-N804S", "mutant F13-1E-V5", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-2404-2424(F13)"),
+      "G", "0")))
+
+RhizoNormal <- RhizoNormal %>% 
+  mutate('804' = if_else(
+    treatment %in% c("wildtype GHu", "mutant F13-1E-N804S", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)", "mutant GHu-1E-V5", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5"), "S",
+    if_else(
+      treatment %in% c("wildtype F13", "mutant F13-1E-G802K", "mutant GHu-1E-2404-2424(F13)", "mutant F13-1E-V5", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N"), "N", "0")))
+
+RhizoNormal <- RhizoNormal %>% 
+  mutate('Background' = if_else(
+    treatment %in% c("wildtype GHu", "mutant GHu-1E-V5", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5", "mutant GHu-1E-2404-2424(F13)",  "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N"), "GHu",
+    if_else(
+      treatment %in% c("wildtype F13", "mutant F13-1E-N804S", "mutant F13-1E-G802K",  "mutant F13-1E-V5", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)"),
+      "F13",
+      "0")))
+
+RhizoNormal <- RhizoNormal %>%
+  mutate('802/804' = if_else(
+    treatment %in% c("wildtype F13", "mutant F13-1E-V5", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-K802G-S804N"), "802 G 804 N",
+    if_else(
+      treatment %in% c("mutant F13-1E-G802K", "mutant GHu-1E-S804N"), "802 K 804 N",
+    if_else(
+      treatment %in% c("mutant F13-1E-N804S", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5"), "802 G 804 S",
+    if_else(
+      treatment %in% c("wildtype GHu", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)", "mutant GHu-1E-V5"), "802 K 804 S",
+    if_else(treatment %in% c("TRV"), "TRV", 
+    "non-infected")
+    ))))
+  )
+
+RhizoNormal <- RhizoNormal %>%
+  mutate('Tag' = if_else(treatment %in% c("mutant GHu-1E-V5", "mutant GHu-1E-K802G-V5", "mutant F13-1E-V5"),
+    "GFLV + V5 epitope",
+    if_else(treatment %in% c("mock control", "inoculated, non-infected"), "Non-infected",
+    if_else(treatment %in% c("TRV"), "TRV",
+    if_else(treatment %in% c("wildtype GHu", "mutant GHu-1E-K802G", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N", "wildtype F13", "mutant F13-1E-N804S", "mutant F13-1E-G802K", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)"), "GFLV only", "0"
+    ))))
+)
+
+RhizoNormal <- RhizoNormal %>%
+  mutate('Virus' = if_else(treatment %in% c("wildtype GHu", "mutant GHu-1E-V5", "mutant GHu-1E-K802G", "mutant GHu-1E-K802G-V5", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-S804N", "wildtype F13", "mutant F13-1E-N804S", "mutant F13-1E-G802K",  "mutant F13-1E-V5", "mutant F13-1E-G802K-N804S", "mutant F13-1E-2404-2424(GHu)"), "GFLV", 
+    if_else(treatment %in% c("TRV"), "TRV", "0")))
+
+RhizoNormal <- RhizoNormal %>%
+  mutate(treatment = case_when(
+    treatment %in% c('inoculated, non-infected', 'mock control') ~ 'non-infected',
+  TRUE ~ treatment
+  ))
+
+RhizoNormal %<>% arrange(treatment) %>%
+  mutate(treatment = factor(treatment, levels=c("non-infected", "wildtype F13", 
+            "mutant F13-1E-G802K", "mutant F13-1E-N804S", "mutant F13-1E-G802K-N804S", 
+            "mutant F13-1E-2404-2424(GHu)", "mutant F13-1E-V5", "wildtype GHu", "mutant GHu-1E-K802G", "mutant GHu-1E-S804N", "mutant GHu-1E-K802G-S804N", "mutant GHu-1E-2404-2424(F13)", "mutant GHu-1E-V5", "mutant GHu-1E-K802G-V5", "TRV"))) %>% 
+  arrange(treatment)
+
+
+```
+
+# Testing of factors for association with RSA traits
+
+```{r}
+# statistical testing of hypotheses ( account for cohort, plant, and age to forego normalization prior)
+
+RhizoNormal$cohort <- as.numeric(RhizoNormal$cohort)
+RhizoNormal$plant <- as.factor(RhizoNormal$plant)
+
+# Hypothesis #1: The identity of residue 802 has a signficant impact on RSA.
+#modeltips <- glmer(`number of root tips` ~ `802` + `804` + Background + age , data = RhizoNormal, family = "poisson")
+modelbranch2 <- glmer(`adjusted_normalized_number of branch points` ~ `802`*`804` + Background + age + dpi + (1|cohort/plant), data = RhizoNormal, family = "gaussian")
+emmeans(modelbranch2, pairwise ~ `802`*`804`|Background, type= 'response')
+
+modeltips2 <- glmer(`adjusted_normalized_number of root tips` ~ `802`*`804` + `802`*Background + `804`*Background + (1|cohort/plant), data = RhizoNormal, family = "gaussian")
+emmeans(modeltips2, pairwise ~ `802`*`804`|Background, type= 'response')
+
+modeldia2 <- glmer(`adjusted_normalized_average diameter (mm)` ~ `802`*`804` + `802`*Background + `804`*Background + (1|cohort/plant), data = RhizoNormal, family = "gaussian")
+emmeans(modeldia2, pairwise ~ `802`*`804`|Background, type= 'response')
+
+RhizoAllComplete %>% count(`802`, `804`, Background)
+summary(modeltips2)
+emmeans(modeltips2,  pairwise ~ `802`*`804`|Background, type = "response", flat = T)
+emmeans(modeltips2, ~ treatment, type = "response")
+
+
+p <- ggplot(RhizoNormal, aes(x = `adjusted_normalized_number of branch points`, y = `adjusted_normalized_average diameter (mm)`, color = treatment, alpha=0.5)) +
+  geom_point() +
+  scale_color_manual(values = colorlist15) +
+  theme_minimal() + xlim(0,1500) +
+  labs(title = "Scatter Plot of Branch Points vs. Average Diameter by Treatment",
+       x = "Number of Branch Points",
+       y = "Average Diameter",
+       color = "Treatment")
+p
+
+
+treatment_means <- RhizoNormal %>%
+  group_by(treatment) %>%
+  summarise(mean_root_tips = mean(`adjusted_normalized_number of branch points`, na.rm = TRUE),
+            mean_diameter = mean(`adjusted_normalized_average diameter (mm)`, na.rm = TRUE))
+
+p + geom_point(data = treatment_means, aes(x = mean_root_tips, y = mean_diameter, color = treatment, alpha = 1), 
+               shape = 18, size = 4, stroke = 2) # Using a different shape and size for mean points
+ggsave("branching_by_diameter_fig.tiff", dpi=600, width = 6, height = 6)
+
+library(dplyr)
+library(factoextra)
+
+RhizoAllTreatments2 <- RhizoNormal[,(54:64)]
+
+```
+
+```{r}
+
+# 1. Select Numeric Variables
+# Impute NA values with the mean for each column
+numeric_data_imputed <- RhizoNormal[-c(135,151),c(55,57:67,69:83)] %>%
+  select_if(is.numeric) %>%
+  mutate(across(everything(), ~ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+numeric_data_imputed2 <- numeric_data_imputed[]
+# Ensure no constant columns are present after imputation
+constant_columns <- sapply(numeric_data_imputed2, function(x) var(x, na.rm = TRUE) == 0)
+numeric_data_imputed_filtered <- numeric_data_imputed2[, !constant_columns] 
+numeric_data_imputed_filtered2 <- numeric_data_imputed_filtered[]
+
+# Scale the data
+numeric_data_scaled <- scale(numeric_data_imputed_filtered2)
+# 4. Perform PCA
+pca_result <- prcomp(numeric_data_scaled, center = TRUE, scale. = T)
+
+# Scree plot to see the variance explained by each principal component
+fviz_eig(pca_result)
+
+# Biplot to visualize loadings and scores
+fviz_pca_biplot(pca_result, label = "var", repel = TRUE,
+                col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+                addEllipses = F, ellipse.type = "confidence")
+ggsave("biplot.tiff", width = 8, height = 6, dpi = 500)
+scores <- as.data.frame(pca_result$x)  # Extract PCA scores
+
+# Add treatment information (and any other relevant variables) back to the scores
+selected_rows <- RhizoAllTreatments5[,c(1:6,12,45:54)]
+selected_rows2 <- selected_rows[-c(135,151),]
+
+# Merge PCA scores with treatment information
+combined_data <- cbind(scores, selected_rows2)
+
+
+
+
+
+```
+
+
+
+
+```{r}
+
+model24 <- glmer(`adjusted_normalized_number of root tips` ~ `802`*`804` + Background + age + dpi + Tag + Virus + (1|cohort/plant), data = RhizoNormal)
+summary(model24)
+emmeans(model24, pairwise ~ `802` + `804` + Background, type = "response")
+
+model24 <- lmer(`adjusted_normalized_average diameter (mm)` ~ `802`*`804` + Background + age + dpi + Tag + Virus + (1|cohort/plant), data = RhizoNormal)
+summary(model24)
+emmeans(model24, pairwise ~ `802` + `804` + Background, type = "response")
+
+model24 <- glmer( ~ , data = RhizoNormal, family = poisson)
+
+# Hypothesis #2: The identity of residue 804 has no impact on RSA.
+
+
+
+# Hypothesis #3: TRV treated plants see heavy impact to RSA and behave as a positive control. 
+modelTRV <- glmer(`number of root tips` ~ Virus + age + (1|cohort/plant), data = RhizoAllTreatments, family = "poisson")
+emmeans(modelTRV, pairwise ~ Virus, type = "response")
+
+
+# Hypothesis #4: V5 epitope tags on the C-terminus have little to no impact on the total RSA. 
+modelTag <- glmer(`number of root tips` ~ Tag + age + (1|cohort/plant), data = RhizoAllTreatments, family = "poisson")
+emmeans(modelTag, pairwise ~ Tag, type = "response")
+# No significant results, the V5 tag does not seem to have an impact on the overall
+
+
+```
+
+```{r}
+
+# 1. Select Numeric Variables
+# Impute NA values with the mean for each column
+numeric_data_imputed <- RhizoNormal[-c(135,151),c(55,57:67,69:83)] %>%
+  select_if(is.numeric) %>%
+  mutate(across(everything(), ~ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+# Ensure no constant columns are present after imputation
+constant_columns <- sapply(numeric_data_imputed, function(x) var(x, na.rm = TRUE) == 0)
+
+# Scale the data
+numeric_data_scaled <- scale(numeric_data_imputed)
+# 4. Perform PCA
+pca_result <- prcomp(numeric_data_scaled, center = TRUE, scale. = TRUE)
+
+# Scree plot to see the variance explained by each principal component
+fviz_eig(pca_result)
+
+# Biplot to visualize loadings and scores
+fviz_pca_biplot(pca_result, label = "var", repel = TRUE,
+                col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+                addEllipses = TRUE, ellipse.type = "confidence")
+
+scores <- as.data.frame(pca_result$x)  # Extract PCA scores
+
+# Add treatment information (and any other relevant variables) back to the scores
+selected_rows <- RhizoAllTreatments5[,c(1:6,12,45:54)]
+selected_rows2 <- selected_rows[-c(135,151),]
+
+# Merge PCA scores with treatment information
+combined_data <- cbind(scores, selected_rows2)
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color = treatment, shape = as.factor(`802/804`))) +
+  geom_jitter() +  # Use geom_point() to plot points
+  scale_color_manual(values = colorlist15) +  # Customize colors
+  theme_minimal() +
+  labs(title = "PCA of RhizoNormal Data", x = "Principal Component 1", y = "Principal Component 2")
+
+#ggplot(combined_data, aes(x = PC1, y = PC2, color = as.factor(`802/804`), shape = as.factor(`Tag`))) +
+#  geom_jitter() + 
+#  theme_minimal() +
+#  labs(title = "PCA of RSA Data", x = "Principal Component 1", y = "Principal Component 2")
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color = as.factor(`age`))) +
+  geom_jitter() +  # Use geom_point() to plot points
+  labs(title = "PCA of RSA by Age (Normalized)", x = "Principal Component 1", y = "Principal Component 2") + 
+  stat_ellipse(type = "norm", level = 0.95, size = 0.5)
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color = as.factor(`cohort`))) +
+  geom_jitter() +  # Use geom_point() to plot points
+  labs(title = "PCA of RSA by Cohort (Normalized)", x = "Principal Component 1", y = "Principal Component 2") + 
+  stat_ellipse(type = "norm", level = 0.95, size = 0.5)
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color = as.factor(`dpi`))) +
+  geom_jitter() +  # Use geom_point() to plot points
+  labs(title = "PCA of RSA by DPI (Normalized)", x = "Principal Component 1", y = "Principal Component 2") + 
+  stat_ellipse(type = "norm", level = 0.95, size = 0.5)
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color = as.factor(`treatment`))) +
+  geom_jitter() + 
+  scale_color_manual(values = colorlist15) +
+  labs(title = "PCA of RSA by Treatment (Normalized)", x = "Principal Component 1", y = "Principal Component 2") + 
+  stat_ellipse(type = "norm", level = 0.95, size = 0.3)
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color =  as.factor(`802/804`))) +
+  geom_jitter() +  # Use geom_point() to plot points
+  scale_color_manual(values = colorlist15) +  # Customize colors
+  theme_minimal() +
+  labs(title = "PCA of RhizoNormal Data", x = "Principal Component 1", y = "Principal Component 2")
+
+```
+
+# extract out 3 PCAs to see if 3D pca is possible
+
+```{r}
+
+ggplot(combined_data, aes(x=PC1, y=PC3, z=PC2, group = treatment, alpha = 0.6)) + 
+  theme_void() +
+  axes_3D() +
+  stat_3D() 
+
+```
+
+# create 3D PCAs to further test data organization
+
+```{r}
+  
+library("scatterplot3d")
+
+combined_data$treatment <- make.names(combined_data$treatment)
+
+unique_treatments <- sort(unique(combined_data$treatment))
+unique_treatments
+# Step 2: Map colors to treatments
+# If the number of unique treatments is exactly 15
+if(length(unique_treatments) == length(colors)) {
+  # Create a named vector where names are treatments and values are colors
+  treatment_colors <- setNames(colors, unique_treatments)
+  
+  # Step 3: Add color information to the dataframe
+  combined_data$color <- treatment_colors[combined_data$treatment]
+} else {
+  stop("The number of unique treatments does not match the number of colors provided.")
+}
+
+colors = colorlist15
+unique_treatments
+combined_data$treatment
+combined_data %<>% arrange(treatment) %>%
+  mutate(treatment = factor(treatment, levels=c("non.infected", "wildtype.F13", 
+            "mutant.F13.1E.G802K", "mutant.F13.1E.N804S", "mutant.F13.1E.G802K.N804S", 
+            "mutant.F13.1E.2404.2424.GHu.", "mutant.F13.1E.V5", "wildtype.GHu", "mutant.GHu.1E.K802G", "mutant.GHu.1E.S804N", "mutant.GHu.1E.K802G.S804N", "mutant.GHu.1E.2404.2424.F13.", "mutant.GHu.1E.V5", "mutant.GHu.1E.K802G.V5", "TRV"))) %>% 
+  arrange(treatment)
+
+unique_treatments <- sort(unique(combined_data$treatment))
+
+treatment_levels <- levels(combined_data$treatment)
+
+# Check if the number of levels matches the number of colors
+if(length(treatment_levels) == length(colors)) {
+  # Map colors to treatments directly based on the order of levels
+  treatment_colors <- setNames(colors, treatment_levels)
+  
+# Step 3: Add color information to the dataframe
+  combined_data$color <- treatment_colors[as.character(combined_data$treatment)]
+} else {
+  stop("The number of treatment levels does not match the number of colors provided.")
+}
+
+# top panel
+s3d <-scatterplot3d(combined_data[, 1], combined_data[, 2],combined_data[, 3], xlab="PC1: 46.3%", ylab="PC2: 18.7%", zlab="PC3: 12.0%", pch = 20, angle = 15, color = combined_data$color, type = "h")
+# second panel
+s3d <-scatterplot3d(combined_data[, 1], combined_data[, 2],combined_data[, 3], xlab="PC1: 46.3%", ylab="PC2: 18.7%", zlab="PC3: 12.0%", pch = 20, angle = 105, color = combined_data$color, type = "h", lty.hplot = )
+
+s3d <-scatterplot3d(combined_data[, 1], combined_data[, 2],combined_data[, 3], xlab="PC1: 46.3%", ylab="PC2: 18.7%", zlab="PC3: 12.0%", pch = 16, angle = 325, color = combined_data$color, type = "h")
+s3d <-scatterplot3d(combined_data[, 1], combined_data[, 2],combined_data[, 3], xlab="PC1: 46.3%", ylab="PC2: 18.7%", zlab="PC3: 12.0%", pch = 20, angle = 105, color = combined_data$color, type = "h")
+```
+
+```{r}
+# removal of outliers
+
+# code from https://www.r-bloggers.com/2020/01/how-to-remove-outliers-in-r/ 
+boxplot(warpbreaks$breaks, plot=FALSE)$out
+outliers <- boxplot(warpbreaks$breaks, plot=FALSE)$out
+x<-warpbreaks
+x<- x[-which(x$breaks %in% outliers),]
+
+```
+
+```{r}
+
+#glmer(y ~ x, data = ..., family = "poisson")
+
+#glmer.nb(`number of root tips`  ~ treatment + (1|cohort), data = RhizoAll2)
+
+modeltips <- glmer(`number of root tips` ~ treatment + age + dpi + (1|cohort/plant), data = RhizoAll, family = "poisson")
+summary(modeltips)
+modelavgdia <- glmer(`average diameter (mm)` ~ treatment + age + dpi + (1|cohort/plant), data = RhizoAll, family = "poisson")
+
+modeltips <- glmer(`number of root tips` ~ `802` + `804` + Background + age + (1|cohort/plant), data = RhizoAllComplete, family = "poisson")
+
+modeltips2 <- glmer(`number of root tips` ~ `802`*`804` + `802`*Background + `804`*Background + age + (1|cohort/plant), data = RhizoAllComplete, family = "poisson")
+
+RhizoAllComplete %>% count(`802`, `804`, Background)
+summary(modeltips2)
+emmeans(modeltips2, pairwise ~ `802`*`804`|Background, type = "response", flat=T)
+RhizoAll2
+```
+
+
+```{r}
+
+```
+
+```{r}
+
+#ggboxplot(RhizoAll_scaled, x = "treatment", y= "number of branch points", fill = "treatment", palette = colorlist15, labels = TRUE, xlab = FALSE, width = 0.75) + ylim(0,1200) + 
+#  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1), legend.position='none') +
+#  stat_compare_means(label = 'p.signif', method ='t.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20) +
+#  geom_text(data = plant_count, aes(x = treatment, y = 1150, label = count),
+#              vjust = -0.5, color = "black", size = 3)
+
+RhizoNormal$volume <- RhizoNormal$`adjusted_normalized_volume (mm^3)`
+RhizoNormal$diameter <- RhizoNormal$`adjusted_normalized_average diameter (mm)`
+RhizoNormal$surface <- RhizoNormal$`adjusted_normalized_surface area (mm^2)`
+
+#top panel
+ggboxplot(RhizoNormal, x = "treatment", y= "diameter", fill = "treatment", palette = colorlist15, labels = TRUE, xlab = FALSE, width = 0.75) + 
+  ylim(0,2.3) +
+  geom_hline(yintercept = 0.9) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='wilcox.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20, label.y = 2) + 
+  geom_text(data = plantspertreatment, aes(x = treatment, y = 2.29, label = count))
+
+#second panel
+ggboxplot(RhizoNormal, x = "treatment", y= "adjusted_normalized_number of branch points", fill = "treatment", palette = colorlist15, labels = TRUE, xlab = FALSE, width = 0.75) + 
+  ylim(0,1200) + 
+  geom_hline(yintercept = 402) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='wilcox.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20)
+#third panel
+ggboxplot(RhizoNormal, x = "treatment", y= "adjusted_normalized_number of root tips", fill = "treatment", palette = colorlist15, group = "cohort",labels = TRUE, xlab = FALSE, width = 0.75) + 
+  ylim(0,1000) + 
+  geom_hline(yintercept = 220) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='wilcox.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20) 
+#fourth panel
+ggboxplot(RhizoNormal, x = "treatment", y= "surface", fill = "treatment", palette = colorlist15, labels = TRUE, xlab = FALSE, width = 0.75) + 
+  ylim(0,10000) + 
+  geom_hline(yintercept = 2350) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='wilcox.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20)
+#fifth panel
+ggboxplot(RhizoNormal, x = "treatment", y= "volume", fill = "treatment", palette = colorlist15, labels = TRUE, xlab = FALSE, width = 0.75) + 
+  ylim(0,5500) + 
+  geom_hline(yintercept = 1100) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='wilcox.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20)
+
+
+
+
+#  facet_wrap(facets = "cohort")
+
++
+  geom_text(data = plant_count, aes(x = treatment, y = 1150, label = count),
+              vjust = -0.5, color = "black", size = 3)
+
+```
+
+
+```{r}
+library(PMCMRplus)
+library(multcompView)
+RhizoNormal_cleaned$treatment2 <- gsub("-", "", RhizoNormal_cleaned$treatment)
+RhizoNormal_cleaned$treatment2 <- gsub(" ", "", RhizoNormal_cleaned$treatment2)
+RhizoNormal_cleaned$treatment2 <- gsub("\\(", "", RhizoNormal_cleaned$treatment2)
+RhizoNormal_cleaned$treatment2 <- gsub("\\)", "", RhizoNormal_cleaned$treatment2)
+RhizoNormal_cleaned$treatment2 <- as.factor(RhizoNormal_cleaned$treatment2)
+
+#
+
+# Load necessary libraries
+if (!requireNamespace("FSA", quietly = TRUE)) install.packages("FSA")
+if (!requireNamespace("multcompView", quietly = TRUE)) install.packages("multcompView")
+library(FSA)
+library(multcompView)
+library(ggplot2)
+library(dplyr)
+
+# Kruskal-Wallis Test
+kruskal_result <- kruskal.test(`adjusted_normalized_number of root tips` ~ treatment2, 
+                               data = RhizoNormal_cleaned)
+print(kruskal_result)
+
+kruskal_result_diameter <- kruskal.test(`adjusted_normalized_average diameter (mm)` ~ treatment2, 
+                               data = RhizoNormal_cleaned)
+
+
+pairwise.wilcox.test(RhizoNormal_cleaned$`adjusted_normalized_number of root tips`, RhizoNormal_cleaned$treatment2)
+
+
+
+
+
+
+
+print(kruskal_result_diameter)
+
+# Temporarily rename the column to avoid spaces
+RhizoNormal_cleaned$adjusted_normalized_number_of_root_tips <- RhizoNormal_cleaned$`adjusted_normalized_number of root tips`
+table(RhizoNormal_cleaned$treatment2)
+
+# Perform the Dunn test with the renamed column
+dunn_result <- rstatix::dunn_test(data = RhizoNormal_cleaned, 
+                                  formula = adjusted_normalized_number_of_root_tips ~ treatment2, 
+                                  p.adjust.method = "bonferroni")
+
+# Dunn Test (if Kruskal-Wallis is significant)
+dunn_result <- rstatix::dunn_test(RhizoNormal_cleaned, `adjusted_normalized_number of root tips` ~ treatment2, 
+                        p.adjust.method = "bonferroni")
+dunn_result <- rstatix::dunn_test(data = RhizoNormal_cleaned, 
+                                  formula = `adjusted_normalized_number of root tips` ~ treatment2, 
+                                  p.adjust.method = "bonferroni")
+print(dunn_result, dunn.test.results=T)
+
+
+# Extracting p-values and comparisons
+p_values <- dunn_result$res$P.adj
+comparison_labels <- dunn_result$res$Comparison
+# Manually assigning names to the p_values vector
+names(p_values) <- comparison_labels
+comparison_letters <- multcompLetters(p_values, Letters = letters)
+comparison_letters
+# Merge letters with original data
+treatment_letters <- data.frame(treatment3 = names(comparison_letters$Letters), 
+                                Letter = comparison_letters$Letters)
+RhizoNormal_cleaned2 <- left_join(RhizoNormal_cleaned, treatment_letters, by = "treatment3")
+
+# Boxplot with significance letters
+ggplot(RhizoNormal_cleaned2, aes(x = treatment3, y = `adjusted_normalized_number of root tips`)) +
+  geom_boxplot() + 
+  geom_text(aes(label = Letter, group = treatment3), position = position_dodge(width = 0.8), vjust = -0.5) +
+  theme_minimal() +
+  labs(title = "Adjusted Normalized Number of Root Tips by Treatment", 
+       y = "Adjusted Normalized Number of Root Tips", 
+       x = "Treatment")
+```
+
+
+
+```{r}
+
+ggboxplot(RhizoAll_scaled, x = "treatment", y= "number of root tips", fill = "treatment", labels = TRUE, xlab = FALSE, width = 0.5) +
+  stat_compare_means(label = 'p.signif', method ='t.test', ref.group = "mock control", hide.ns = TRUE, text.size = 20) +
+  theme(aspect.ratio = 1)
+
+ggboxplot(RhizoAll_scaled, x = "treatment", y= "number of root tips", fill = "treatment", labels = FALSE, xlab = FALSE, width = 0.5) +
+  stat_compare_means(label = 'p.signif', method ='t.test', ref.group = "mock control", hide.ns = TRUE, text.size = 20) +
+  theme(aspect.ratio = 1)
+
+```
+
+```{r}
+## Age normalization
+
+# Identify numeric columns (excluding specific columns)
+cols_to_normalize <- setdiff(names(RhizoAll2), c("age", "cohort", "plant", "treatment", "number", "dpi", "roi","scan side", "image name", "computation time (s)"))
+
+# Calculate min-max scaling for 'age'
+age_min <- min(RhizoAll2$age)
+age_max <- max(RhizoAll2$age)
+scaled_age <- (RhizoAll2$age - age_min) / (age_max - age_min)
+
+# Scaling each numeric column
+scaled_data <- as.data.frame(lapply(RhizoAll2[, cols_to_normalize], function(x) {
+  if (is.numeric(x)) {
+    (x - min(x, na.rm = TRUE)) / (max(x, na.rm = TRUE) - min(x, na.rm = TRUE))
+  } else {
+    x
+  }
+}))
+
+# Normalize each column by the scaled 'age'
+normalized_data <- RhizoAll2[, cols_to_normalize]*scaled_age
+
+# Recreate the dataframe by combining the unchanged columns with the normalized data
+RhizoAll_scaled <- cbind(RhizoAll2[, c("cohort", "age", "plant", "treatment", "number", "dpi", "roi", "scan side", "image name", "computation time (s)")], normalized_data)
+
+# variable assignment
+RhizoAll_scaled <- as.data.frame(RhizoAll_scaled)
+
+RhizoAll_scaled <- RhizoAll_scaled %>% 
+  rename(
+    averagediameter = `average diameter (mm)`
+    )
+
+
+```
+
+```{r}
+
+ggboxplot(RhizoAll_scaled, x = "treatment", y= "number of branch points", fill = "treatment", palette = colorlist15, labels = TRUE, xlab = FALSE, width = 0.75) + ylim(0,1200) + 
+  theme(axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='wilcox.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20) +
+  geom_text(data = plant_count, aes(x = treatment, y = 1150, label = count),
+              vjust = -0.5, color = "black", size = 3)
+
+p <- ggboxplot(RhizoAll_scaled, x = "treatment", y= "number of root tips", fill = "treatment", palette = colorlist16, labels = TRUE, xlab = FALSE, width = 0.75) + 
+  ylim(0,600) + 
+  geom_hline(yintercept = 155) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='t.test', ref.group = "inoculated, non-infected", hide.ns = TRUE, text.size = 20)
+
+p + geom_text(data = plant_count, aes(x = treatment, y = 930, label = count),
+              vjust = -0.5, color = "black", size = 3)
+
+ggboxplot(RhizoAll_scaled, x = "treatment", y= "number of branch points", fill = "treatment", palette = colorlist16, labels = TRUE, xlab = FALSE, width = 0.75) + ylim(0,1250) + geom_hline(yintercept = 250) + theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='t.test', ref.group = "inoculated, non-infected", hide.ns = TRUE, text.size = 20)
+ggsave("Branching.tiff", width =10, height =6, dpi = 600)
+ggboxplot(RhizoAll_scaled, x = "treatment", y= "averagediameter", fill = "treatment", palette = colorlist16, labels = TRUE, xlab = FALSE, width = 0.75) + ylim(0,1.5) + 
+  geom_hline(yintercept = .48, color= 'gray10') + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='t.test', ref.group = "mock control", hide.ns = TRUE, text.size = 20)
+
+p + geom_text(data = plant_count, aes(x = treatment, y = 575, label = count),
+              vjust = -0.5, color = "gray", size = 3)
+ggsave("roottips.tiff", width =10, height =6, dpi = 600)
+# + facet_wrap("cohort")
+
+
+
+```
+
+# PCA on untouched data
+```{r}
+# 1. Select Numeric Variables
+# Impute NA values with the mean for each column
+numeric_data_imputed <- RhizoAllTreatments3 %>%
+  select_if(is.numeric) %>%
+  mutate(across(everything(), ~ifelse(is.na(.), mean(., na.rm = TRUE), .)))
+
+numeric_data_imputed2 <- numeric_data_imputed[,-c(12)]
+numeric_data_imputed2 <- numeric_data_imputed2[-c(12),]
+# Ensure no constant columns are present after imputation
+constant_columns <- sapply(numeric_data_imputed2, function(x) var(x, na.rm = TRUE) == 0)
+numeric_data_imputed_filtered <- numeric_data_imputed2[, !constant_columns] 
+numeric_data_imputed_filtered2 <- numeric_data_imputed_filtered[-c(26,755),]
+
+# Scale the data
+numeric_data_scaled <- scale(numeric_data_imputed_filtered2)
+# 4. Perform PCA
+pca_result <- prcomp(numeric_data_scaled, center = TRUE, scale. = TRUE)
+
+# Scree plot to see the variance explained by each principal component
+fviz_eig(pca_result)
+
+# Biplot to visualize loadings and scores
+fviz_pca_biplot(pca_result, label = "var", repel = TRUE,
+                col.ind = "cos2", gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+                addEllipses = TRUE, ellipse.type = "confidence")
+
+scores <- as.data.frame(pca_result$x)  # Extract PCA scores
+
+# Add treatment information (and any other relevant variables) back to the scores
+selected_rows <- RhizoAllTreatments2[,c(1:5,45:54)]
+selected_rows2 <- selected_rows[-c(26,755),]
+
+# Merge PCA scores with treatment information
+combined_data <- cbind(scores, selected_rows2)
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color = as.factor(`cohort`), shape = as.factor(`802/804`))) +
+  geom_jitter() +  # Use geom_point() to plot points
+  theme_minimal() +
+  labs(title = "PCA of RhizoNormal Data", x = "Principal Component 1", y = "Principal Component 2")
+
+ggplot(combined_data, aes(x = PC1, y = PC2, color = as.factor(`dpi`), shape = as.factor(`Tag`))) +
+  geom_jitter() + 
+  theme_minimal() +
+  labs(title = "PCA of RSA Data", x = "Principal Component 1", y = "Principal Component 2")
+
+```
+
+ Example using PMCMRplus for pairwise comparisons after Kruskal-Wallis
+post_hoc_result <- dunnTest(`adjusted_normalized_number of root tips` ~ treatment, data = RhizoNormal_cleaned)
+# Assuming the post-hoc test returns a list that includes p-values
+p_values <- post_hoc_result$res
+
+
+res_tip <- kruskal_test(`adjusted_normalized_number of root tips` ~ treatment2, RhizoNormal_cleaned)
+res_tip # results indicate significant difference, follow with Post-Hoc
+dun_tip = dunnTest(`adjusted_normalized_number of root tips` ~ `treatment`, data = RhizoNormal_cleaned)
+
+ggboxplot(RhizoNormal_cleaned, x = "treatment", y= "adjusted_normalized_number of root tips", fill = "treatment", palette = colorlist15, labels = TRUE, xlab = FALSE, width = 0.75) + 
+  ylim(0,2500) + 
+  labs(subtitle = get_test_label(dun_tip$res), detailed = T, caption = get_pwc_label(dun_tip)) +
+  geom_hline(yintercept = 205) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1), legend.position='none') +
+  stat_compare_means(label = 'p.signif', method ='t.test', ref.group = "non-infected", hide.ns = TRUE, text.size = 20)
+
+
+DT = dunnTest(`number of root tips` ~ treatment, data = Root_Summary)
+
+lettip <- multcompLetters(res_tip21, pwc_tip21)
+
+```
