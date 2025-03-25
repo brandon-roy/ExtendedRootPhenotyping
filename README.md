@@ -34,14 +34,14 @@
         <h2>Methods</h2>
         <!-- Plant Growth -->
         <article>
-          <h3>Plant Growth</h3>
+          <h3><em>Plant Growth</em></h3>
           <p>
             Wildtype <em>Nicotiana benthamiana</em> seeds were sown in Cornell LM-3 soilless media for two to three weeks before transplant in a similar growth medium (4:1:1, LM-3:perlite:vermiculite), as previously reported. Seedlings were fertilized weekly with Scott’s Miracle Grow. Growing conditions were maintained at a 16:8 hour light:dark period at 25°C and 70% relative humidity.
           </p>
         </article>
         <!-- GFLV Strains and Plant Inoculation -->
         <article>
-          <h3>GFLV Strains and Plant Inoculation</h3>
+          <h3><em>GFLV Strains and Plant Inoculation</em></h3>
           <p>
             Infectious clones of GFLV RNA1 and RNA2 in <em>Agrobacterium tumefaciens</em> strain GV3301 were utilized to establish initial systemic infection in planta. Wildtype strains F13 (GenBank accession number NC003615) and GHu (JN391442), along with their respective mutant clones of RNA1 in combination with GFLV-GHu RNA2, were selected for this study. Inoculation was performed on plants at the four- to six-leaf stage using <em>A. tumefaciens</em>, and systemic infection was confirmed by double antibody sandwich enzyme-linked immunosorbent assay (DAS-ELISA) using specific antibodies (Bioreba, Reinach, Switzerland) at two weeks post-inoculation.
           </p>
@@ -51,14 +51,15 @@
         </article>
         <!-- Excavation of Root Systems and Analysis -->
         <article>
-          <h3>Excavation of Root Systems and Root System Architecture Analysis</h3>
+          <h3><em>Excavation of Root Systems and Root System Architecture Analysis</em></h3>
           <p>
             Whole crown root systems of <em>N. benthamiana</em> plants (infected with GFLV strains and PepRSV or uninoculated) were excavated by hand and processed according to our previously described methodology. Key root traits—including total number of root tips, average diameter (mm), number of branch points, and total volume (cubic mm)—were measured with minimal pre-processing and no normalization. PepRSV-infected plants served as a positive control. For GFLV-infected plants with replicates grown for varying durations, a z-score normalization of the RSA traits was performed relative to non-infected controls.
           </p>
+          <img src="./Misc/RSA_figure.png" alt="Depiction of analyzed root system of <em>Nicotiana benthamiana</em>">
         </article>
         <!-- Statistical Analyses and Visualization -->
         <article>
-          <h3>Statistical Analyses and Visualization</h3>
+          <h3><em>Statistical Analyses and Visualization</em></h3>
           <p>
             All data was analyzed using R and RStudio. Statistical libraries included:
           </p>
