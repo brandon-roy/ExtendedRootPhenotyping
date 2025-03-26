@@ -6,6 +6,8 @@
     <link rel="stylesheet" href="styles.css">
     <!-- Optionally include a CSS framework (like Bootstrap) for easier responsiveness -->
   </head>
+  <h1>Mechanistic underpinnings of above and below-ground plant symptom development upon infection by grapevine fanleaf virus</h1>
+  <h2>Repository inquiries should be directed to bgr36 'at' cornell.edu</h2>
   <body>
     <!-- Header Section -->
     <header>
@@ -16,9 +18,8 @@
           <li><a href="#results">Results</a></li>
         </ul>
       </nav>
-    </header>
-      <h1>Mechanistic underpinnings of above and below-ground plant symptom development upon infection by grapevine fanleaf virus</h1>
-      <h2>Repository inquiries should be directed to bgr36 'at' cornell.edu</h2>    
+      <div align="center"> <img src="./Misc/GitHubOmics.png" alt="Depiction of analyzed root system of <em>Nicotiana benthamiana</em>" width="475"> </div>
+    </header>    
     <!-- Main Content -->
     <main>
       <!-- Overview Section -->
