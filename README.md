@@ -92,7 +92,7 @@
           <p>
             The complete dataset is represented by the files <code>RhizoAllCompiled.xlsx</code> (raw data) and <code>RhizoAllNormalized.xlsx</code> (normalized and adjusted data). An example of a processed <em>N. benthamiana</em> root system and its basic measurements is provided for reference (below).
           </p>
-          <img src="./Misc/RSA_figure.png" alt="Depiction of analyzed root system of <em>Nicotiana benthamiana</em>">
+          <div align="center"> <img src="./Misc/RSA_figure.png" alt="Depiction of analyzed root system of <em>Nicotiana benthamiana</em>"> </div>
       <!-- File Directory & Documentation Section -->
       <section id="files">
         <h2>File Directory & Documentation</h2>
